@@ -2,6 +2,7 @@
 #include <vector>
 #include <stack>
 #include <list>
+#include <bits/stdc++.h>
 
 void topoSortHelper(DAG &gp, uint32_t node, vector<bool> &visited, stack<uint32_t> &st) {
 	visited[node] = true;
@@ -66,23 +67,39 @@ uint32_t assignTime(DAG &gp, vector<uint32_t> &topOrder, vector<uint32_t> &timeS
 
 	return timeMax;
 }
-uint32_t getParallelism(DAG &gp) {
+double getParallelism(DAG &gp) {
 	vector<uint32_t> topOrder = topoSort(gp);
 	vector<uint32_t> timeSt; 
 	uint32_t timeMax = assignTime(gp, topOrder, timeSt);
-	cout << "Time Max is " << timeMax << endl;
+	/*cout << "Time Max is " << timeMax << endl;
 	cout << "Topological sort order is\n";
 	for(uint32_t n : topOrder) {
 		cout << gp.findNode(n)->getLabel() << " has time " << timeSt[n] << endl;
 	}
-	
 	cout << endl;
-	return 0;
+	*/
+	double total = 0;
+	for(uint32_t i = 1; i <= timeMax; i++) {
+		total+= count(timeSt.begin(), timeSt.end(), i);	
+	}
+	
+	return total/timeMax;
 }
+
+uint32_t criticalPathLen(DAG &gp) {
+	vector<uint32_t> topOrder = topoSort(gp);
+	vector<uint32_t> timeSt; 
+	uint32_t timeMax = assignTime(gp, topOrder, timeSt);
+	return timeMax;
+}
+
 int main(int argc, char **argv) {
 	string fname = argv[1];
 	DAG graph(fname);
 
-	getParallelism(graph);
+	double par = getParallelism(graph);
+	cout << "Parallelism in graph is " << par << endl;
+	uint32_t clen = criticalPathLen(graph);
+	cout << "Critical path length is " << clen << endl;
 	return 0;
 }
