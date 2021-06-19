@@ -38,17 +38,51 @@ vector<uint32_t> topoSort(DAG &gp) {
 
 	return order;
 }
+uint32_t assignTime(DAG &gp, vector<uint32_t> &topOrder, vector<uint32_t> &timeSt) {
+	for(uint32_t i = 0; i < gp.getNumNodes(); i++) {
+		timeSt.push_back(-1);
+	}
+
+	uint32_t timeMax = 0;
+	for(uint32_t n : topOrder) {
+		list<Node> preds;
+		gp.getPredecessors(n, preds);
+		uint32_t max = 0;
+		for(Node prNode : preds) {
+			uint32_t id = prNode.getID();
+			if(timeSt[id] == -1) {
+				cout << "Error, predecessor time cannot be -1\n";
+				return -1;
+			}
+			else if(max < timeSt[id]) {
+				max = timeSt[id];
+			}
+		}
+		timeSt[n] = max + 1;
+		if(timeMax < timeSt[n]) {
+			timeMax = timeSt[n];
+		}
+	}
+
+	return timeMax;
+}
+uint32_t getParallelism(DAG &gp) {
+	vector<uint32_t> topOrder = topoSort(gp);
+	vector<uint32_t> timeSt; 
+	uint32_t timeMax = assignTime(gp, topOrder, timeSt);
+	cout << "Time Max is " << timeMax << endl;
+	cout << "Topological sort order is\n";
+	for(uint32_t n : topOrder) {
+		cout << gp.findNode(n)->getLabel() << " has time " << timeSt[n] << endl;
+	}
+	
+	cout << endl;
+	return 0;
+}
 int main(int argc, char **argv) {
 	string fname = argv[1];
-	cout << fname << "\n";
 	DAG graph(fname);
-	vector<uint32_t> topOrder = topoSort(graph);
 
-	cout << "Topological sort order is : ";
-	for(uint32_t n : topOrder) {
-		cout << graph.findNode(n)->getLabel() << " ";
-	}
-	cout << endl;
-
+	getParallelism(graph);
 	return 0;
 }
