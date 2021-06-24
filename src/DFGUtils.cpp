@@ -3,6 +3,7 @@
 #include <stack>
 #include <list>
 #include <bits/stdc++.h>
+#include <string>
 
 void topoSortHelper(DAG &gp, uint32_t node, vector<bool> &visited, stack<uint32_t> &st) {
 	visited[node] = true;
@@ -59,7 +60,19 @@ uint32_t assignTime(DAG &gp, vector<uint32_t> &topOrder, vector<uint32_t> &timeS
 				max = timeSt[id];
 			}
 		}
-		timeSt[n] = max + 1;
+		string label = gp.findNode(n)->getLabel();
+		if((label.find("load") != std::string::npos) || (label.find("store") != std::string::npos)) {
+			int stride = stoi(label.substr(label.find(";") + 1, label.length()));
+			if(stride >= STRIDE_MIN) {
+				timeSt[n] = max;
+			}
+			else {
+				timeSt[n] = max + 1;
+			}
+		}
+		else {
+			timeSt[n] = max + 1;
+		}
 		if(timeMax < timeSt[n]) {
 			timeMax = timeSt[n];
 		}
@@ -79,10 +92,13 @@ double getParallelism(DAG &gp) {
 	cout << endl;
 	*/
 	double total = 0;
-	for(uint32_t i = 1; i <= timeMax; i++) {
+	for(uint32_t i = 0; i <= timeMax; i++) {
 		total+= count(timeSt.begin(), timeSt.end(), i);	
 	}
 	
+	if(count(timeSt.begin(), timeSt.end(), 0)) {
+		timeMax = timeMax + 1;
+	}
 	return total/timeMax;
 }
 
