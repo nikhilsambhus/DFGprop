@@ -96,9 +96,6 @@ double getParallelism(DAG &gp) {
 		total+= count(timeSt.begin(), timeSt.end(), i);	
 	}
 	
-	if(count(timeSt.begin(), timeSt.end(), 0)) {
-		timeMax = timeMax + 1;
-	}
 	return total/timeMax;
 }
 
