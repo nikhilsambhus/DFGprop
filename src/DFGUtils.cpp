@@ -61,18 +61,28 @@ uint32_t assignTime(DAG &gp, vector<uint32_t> &topOrder, vector<uint32_t> &timeS
 			}
 		}
 		string label = gp.findNode(n)->getLabel();
-		if((label.find("load") != std::string::npos) || (label.find("store") != std::string::npos)) {
+		if((label.find("load") != std::string::npos)) {
 			int stride = stoi(label.substr(label.find(";") + 1, label.length()));
 			if(stride >= STRIDE_MIN) {
 				timeSt[n] = max;
 			}
 			else {
-				timeSt[n] = max + 1;
+				timeSt[n] = max + nodeWts["load"];
+			}
+		}
+		else if((label.find("store") != std::string::npos)) {
+			int stride = stoi(label.substr(label.find(";") + 1, label.length()));
+			if(stride >= STRIDE_MIN) {
+				timeSt[n] = max;
+			}
+			else {
+				timeSt[n] = max + nodeWts["store"];
 			}
 		}
 		else {
-			timeSt[n] = max + 1;
+			timeSt[n] = max + nodeWts[label];
 		}
+
 		if(timeMax < timeSt[n]) {
 			timeMax = timeSt[n];
 		}
