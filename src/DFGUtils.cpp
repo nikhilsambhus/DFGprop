@@ -116,6 +116,12 @@ uint32_t criticalPathLen(DAG &gp) {
 	return timeMax;
 }
 
+void getBasicProps(DAG &gp) {
+	uint32_t nodes = gp.getNumNodes();
+	uint32_t edges = gp.getNumEdges();
+	double deg = (double) edges / (double) nodes;
+	cout << "Nodes " << nodes << " Edges " << edges << " Degree " << deg << endl;
+}
 int main(int argc, char **argv) {
 	string fname = argv[1];
 	DAG graph(fname);
@@ -124,5 +130,6 @@ int main(int argc, char **argv) {
 	cout << "Parallelism in graph is " << par << endl;
 	uint32_t clen = criticalPathLen(graph);
 	cout << "Critical path length is " << clen << endl;
+	getBasicProps(graph);
 	return 0;
 }
