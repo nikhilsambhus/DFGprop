@@ -121,15 +121,69 @@ void getBasicProps(DAG &gp) {
 	uint32_t edges = gp.getNumEdges();
 	double deg = (double) edges / (double) nodes;
 	cout << "Nodes " << nodes << " Edges " << edges << " Degree " << deg << endl;
+
+	int cnt, fmax, fmin;
+	double favg;
+
+	//fin
+	cnt = 0;
+	favg = 0;
+	fmax = INT_MIN;
+	fmin = INT_MAX;
+	for(int i = 0; i < nodes; i++) {
+		string label = gp.findNode(i)->getLabel();
+		if((label.find("load") != std::string::npos)) {
+			continue; //skip load nodes for fin
+		}
+		cnt++;
+		list<Edge> ins;
+		gp.getInEdges(i, ins);
+		if(fmax < int(ins.size())) {
+			fmax = ins.size();
+		}
+
+		if(fmin > ins.size()) {
+			fmin = ins.size();
+		}
+		favg += ins.size(); 
+	}
+	favg = favg/cnt;
+	cout << "Fin stats:- Max: " << fmax << " Min: " << fmin << " Avg: " << favg << endl;
+
+	//fout
+	cnt = 0;
+	favg = 0;
+	fmax = INT_MIN;
+	fmin = INT_MAX;
+	for(int i = 0; i < nodes; i++) {
+		string label = gp.findNode(i)->getLabel();
+		if((label.find("store") != std::string::npos)) {
+			continue; //skip store nodes for fout
+		}
+		cnt++;
+		list<Edge> outs;
+		gp.getOutEdges(i, outs);
+		if(fmax < int(outs.size())) {
+			fmax = outs.size();
+		}
+
+		if(fmin > outs.size()) {
+			fmin = outs.size();
+		}
+		favg += outs.size(); 
+	}
+	favg = favg/cnt;
+	cout << "Fout stats:- Max: " << fmax << " Min: " << fmin << " Avg: " << favg << endl;
 }
 int main(int argc, char **argv) {
 	string fname = argv[1];
 	DAG graph(fname);
 
-	double par = getParallelism(graph);
+	/*double par = getParallelism(graph);
 	cout << "Parallelism in graph is " << par << endl;
 	uint32_t clen = criticalPathLen(graph);
 	cout << "Critical path length is " << clen << endl;
+	*/
 	getBasicProps(graph);
 	return 0;
 }
