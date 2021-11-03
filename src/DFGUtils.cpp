@@ -50,24 +50,24 @@ uint32_t assignTime(DAG &gp, vector<uint32_t> &topOrder, vector<uint32_t> &timeS
 		list<Node> preds;
 		gp.getPredecessors(n, preds);
 		uint32_t max = 0;
+		string label = gp.findNode(n)->getLabel();
 		for(Node prNode : preds) {
 			uint32_t id = prNode.getID();
 			if(timeSt[id] == -1) {
 				cout << "Error, predecessor time cannot be -1\n";
-				return -1;
+				exit(-1);
 			}
 			else if(max < timeSt[id]) {
 				max = timeSt[id];
 			}
 		}
-		string label = gp.findNode(n)->getLabel();
 		if((label.find("load") != std::string::npos)) {
 			int stride = stoi(label.substr(label.find(";") + 1, label.length()));
 			if(stride >= STRIDE_MIN) {
 				timeSt[n] = max;
 			}
 			else {
-				timeSt[n] = max + nodeWts["load"];
+				timeSt[n] = max + 1;//nodeWts["load"];
 			}
 		}
 		else if((label.find("store") != std::string::npos)) {
@@ -76,11 +76,11 @@ uint32_t assignTime(DAG &gp, vector<uint32_t> &topOrder, vector<uint32_t> &timeS
 				timeSt[n] = max;
 			}
 			else {
-				timeSt[n] = max + nodeWts["store"];
+				timeSt[n] = max + 1; //nodeWts["store"];
 			}
 		}
 		else {
-			timeSt[n] = max + nodeWts[label];
+			timeSt[n] = max + 1;//nodeWts[label];
 		}
 
 		if(timeMax < timeSt[n]) {
@@ -175,15 +175,30 @@ void getBasicProps(DAG &gp) {
 	favg = favg/cnt;
 	cout << "Fout stats:- Max: " << fmax << " Min: " << fmin << " Avg: " << favg << endl;
 }
+
+void partitionDFG(DAG &gp) {
+	vector<uint32_t> topOrder = topoSort(gp);
+	vector<uint32_t> timeSt; 
+	uint32_t timeMax = assignTime(gp, topOrder, timeSt);
+	uint32_t part1 = 0;
+	for(uint32_t step = 0; step <= timeMax; step++) {
+		uint32_t outs = std::count(timeSt.begin(), timeSt.end(), step);
+		part1 += outs;
+		cout << "If split at " << step  << " Partition sizes " << part1 << " & " << timeSt.size() - part1 << " intermediate load/stores " << outs << endl;
+	}
+	
+}
 int main(int argc, char **argv) {
 	string fname = argv[1];
 	DAG graph(fname);
 
-	/*double par = getParallelism(graph);
+	double par = getParallelism(graph);
 	cout << "Parallelism in graph is " << par << endl;
 	uint32_t clen = criticalPathLen(graph);
 	cout << "Critical path length is " << clen << endl;
-	*/
+	
 	getBasicProps(graph);
+
+	partitionDFG(graph);
 	return 0;
 }
