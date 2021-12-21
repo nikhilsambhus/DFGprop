@@ -176,14 +176,37 @@ void getBasicProps(DAG &gp) {
 	cout << "Fout stats:- Max: " << fmax << " Min: " << fmin << " Avg: " << favg << endl;
 }
 
+uint32_t getInterNds(int start, int end, DAG &gp, vector<uint32_t> &timeSt) {
+	uint32_t count = 0;
+	for(uint32_t nd = 0; nd < timeSt.size(); nd++) {
+		if(timeSt[nd] >= start && timeSt[nd] <= end) {
+			list<Node> succs;
+			gp.getSuccessors(nd, succs);
+			bool outYes = false;
+			for(Node nd : succs) {
+				if(timeSt[nd.getID()] > end) {
+					outYes = true;
+					break;
+				}
+			}
+			if(outYes == true) {
+				count++;
+			}
+		}
+	}
+	return count;
+}
+
 void partitionDFG(DAG &gp) {
 	vector<uint32_t> topOrder = topoSort(gp);
 	vector<uint32_t> timeSt; 
 	uint32_t timeMax = assignTime(gp, topOrder, timeSt);
 	uint32_t part1 = 0;
+
 	for(uint32_t step = 0; step <= timeMax; step++) {
-		uint32_t outs = std::count(timeSt.begin(), timeSt.end(), step);
-		part1 += outs;
+		uint32_t nds = std::count(timeSt.begin(), timeSt.end(), step);
+		part1 += nds;
+		uint32_t outs = getInterNds(0, step, gp, timeSt);
 		cout << "If split at " << step  << " Partition sizes " << part1 << " & " << timeSt.size() - part1 << " intermediate load/stores " << outs << endl;
 	}
 	
