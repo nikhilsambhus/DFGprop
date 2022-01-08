@@ -23,7 +23,15 @@ map<string, int> nodeWts = {
 {"call_max", 1},
 {"call_min", 1}
 };
+typedef struct partData {
+	int total;
+	int out;
+}partData;
 
+typedef struct partDef {
+	int start, end;
+	partData pData;
+}partDef;
 #include "Graph.h"
 #include "GraphUtils.h"
 
