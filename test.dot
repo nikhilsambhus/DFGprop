@@ -1,0 +1,5 @@
+digraph test {
+  0 [label="mul"];
+  1 [label="load"];
+  0->1 [label=":1"];
+}

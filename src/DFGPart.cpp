@@ -16,7 +16,7 @@ vector<vector<int>> DFGPart::getCombs(int timeMax, int k) {
 		{
 			if (bitmask[i]) { 
 				//std::cout << " " << i + 1;
-				splits.push_back(i);
+				splits.push_back(i+1);
 			}
 		}
 		combs.push_back(splits);
@@ -52,6 +52,17 @@ partData DFGPart::getInterNds(int start, int end, vector<int> &timeSt) {
 	return pData;
 }
 
+int DFGPart::printParts(vector<partDef>& AllParts) {
+	int pno = 1;
+	int totalCoast = 0; //for total intermediate outputs
+	for(auto pd: AllParts) {
+		totalCoast += pd.pData.out;
+		cout << " Pno. " << pno << "(" << pd.start << "-" << pd.end << ") Total nodes: " << pd.pData.total << " Intermediate outputs: " << pd.pData.out; 
+		pno++;
+	}
+	cout << " Total coast = " << totalCoast << endl;
+	return totalCoast;
+}
 int DFGPart::partitionDFGnP(int npart, int map_size) {
 	DFGAnaly danl = DFGAnaly(gp);
 	vector<uint32_t> topOrder = danl.topoSort();
@@ -59,8 +70,11 @@ int DFGPart::partitionDFGnP(int npart, int map_size) {
 	int applicableParts = 0;
 	int32_t timeMax = danl.assignTime(topOrder, timeSt);
 	vector<vector<int>> combs = getCombs(timeMax, npart - 1);
+	vector<partDef> selectedMin;
+	int minCoast = INT_MAX;
 	for(vector<int> splits: combs) {
-		int prev = 0;
+		int prev = 1;
+		int totalCoast = 0; //for total intermediate outputs
 		vector<partDef> AllParts;
 		splits.push_back(timeMax);
 		for(int split : splits) {
@@ -68,7 +82,6 @@ int DFGPart::partitionDFGnP(int npart, int map_size) {
 			if(pData.total > map_size) {
 				break;
 			}
-			//cout << " Pno. " << pno << "(" << prev << "-" << split << ") Total nodes: " << pData.total << " Intermediate outputs: " << pData.out; 
 			partDef pd;
 			pd.start = prev;
 			pd.end = split;
@@ -76,17 +89,19 @@ int DFGPart::partitionDFGnP(int npart, int map_size) {
 			prev = split + 1;
 			AllParts.push_back(pd);
 		}
-		//partData pData = getInterNds(prev, timeMax, gp, timeSt);
-		//cout << " Pno. " << pno << "(" << prev << "-" << timeMax << ") Total nodes: " << pData.total << " Intermediate outputs: " << pData.out; 
 		if(AllParts.size() == npart) {
-			int pno = 1;
-			for(auto pd: AllParts) {
-				cout << " Pno. " << pno << "(" << pd.start << "-" << pd.end << ") Total nodes: " << pd.pData.total << " Intermediate outputs: " << pd.pData.out; 
-				pno++;
-			}
+			totalCoast = printParts(AllParts);
 			applicableParts++;
-			cout << endl;
+			if(totalCoast < minCoast) {
+				selectedMin = AllParts;
+				minCoast = totalCoast;
+			}
 		}
+	}
+
+	if(applicableParts) {
+		cout << "Choosen min total coast partition ";
+		printParts(selectedMin);
 	}
 	return applicableParts;
 }

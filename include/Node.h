@@ -33,10 +33,14 @@ public:
     uint32_t getID() const;
     double getWeight() const;
     string getLabel() const;
+    string getOpCode() const;
+    string getComment() const;
     
     // Mutators. Note that the ID cannot be modified once a node is created.
     void setWeight(double w);
     void setLabel(string op);
+    void setOpCode(string op);
+    void setComment(string comment);
     
     // Print the node (for debugging mostly).
     friend ostream& operator<<(ostream&, const Node& n);

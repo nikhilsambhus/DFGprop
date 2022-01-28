@@ -28,5 +28,6 @@ class DFGPart {
 	int partitionDFGnP(int npart, int map_size);
 	void partitionDFGVar(int map_size);
 	void getBasicProfs();
+	int printParts(vector<partDef>& AllParts);
 };
 #endif 

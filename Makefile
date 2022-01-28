@@ -1,4 +1,4 @@
-CC=g++ -Wall
+CC=g++ -Wall -g
 SRC=./src
 INC=./include
 GR_LIB=/home/sambhusn/llvm-project/llvm/lib/Transforms/LLVMAssngs/cgramap/Graph/lib/libgraph.a

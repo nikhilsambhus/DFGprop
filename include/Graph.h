@@ -114,6 +114,10 @@ public:
     // is expected the method will be called again. The implementation may differ
     // depending on the type of graph, so the method is made abstract.
     virtual void optimize() = 0;
+
+    // checks that there are no two nodes with same ID, no two edges with same ID,
+    // and that each edge connects two valid nodes. Throws exception if graph is not valid
+    virtual void validate();
 };
 
 /******************************************************************************/

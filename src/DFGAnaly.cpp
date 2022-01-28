@@ -46,6 +46,7 @@ uint32_t DFGAnaly::assignTime(vector<uint32_t> &topOrder, vector<int32_t> &timeS
 
 	int32_t timeMax = 0;
 	for(uint32_t n : topOrder) {
+		//cout << n << " ";
 		list<Node> preds;
 		gp.getPredecessors(n, preds);
 		int32_t max = 0;
@@ -60,7 +61,7 @@ uint32_t DFGAnaly::assignTime(vector<uint32_t> &topOrder, vector<int32_t> &timeS
 				max = timeSt[id];
 			}
 		}
-		if((label.find("load") != std::string::npos)) {
+		/*if((label.find("load") != std::string::npos)) {
 			int stride = stoi(label.substr(label.find(";") + 1, label.length()));
 			if(stride >= STRIDE_MIN) {
 				timeSt[n] = max;
@@ -80,7 +81,8 @@ uint32_t DFGAnaly::assignTime(vector<uint32_t> &topOrder, vector<int32_t> &timeS
 		}
 		else {
 			timeSt[n] = max + 1;//nodeWts[label];
-		}
+		}*/
+		timeSt[n] = max + 1;
 
 		if(timeMax < timeSt[n]) {
 			timeMax = timeSt[n];

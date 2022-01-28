@@ -21,7 +21,7 @@ digraph {
   19 [label="mul"];
   20 [label="mul"];
   21 [label="abs"];
-  22 [label="mul"]
+  22 [label="mul"];
   23 [label="exp"];
   24 [label="add"];
   25 [label="mul"];

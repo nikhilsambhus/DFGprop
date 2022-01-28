@@ -18,7 +18,7 @@ bool isDAG(DAG& g);
 // their ids) in graph g. The shortest path is placed in the array path (which much
 // be pre allocated) and the actual shortest distance in mindist. Throws an exception
 // if parents is nullptr or if the nodes with ids src/dest do not exist.
-void shortestPath(Graph& g, std::set<uint32_t> src, uint32_t dest, uint32_t* parents, double& mindist);
+void shortestPath(Graph& g, std::set<uint32_t> src, uint32_t dest, uint32_t* parents, double& mindist, std::set<uint32_t> forbiddenNodes = std::set<uint32_t>(), std::set<uint32_t> forbiddenEdges = std::set<uint32_t>());
 
 // Function for writing a dot file decribing the graph
 void toDOT(string filename, Graph& g);

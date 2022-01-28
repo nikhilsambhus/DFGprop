@@ -5,6 +5,6 @@ digraph {
   2 [label="mul"];
   3 [label="load"];
 
-  0->2 [label="1:1.0"];
+  0->2 [label="1:1"];
 
 }

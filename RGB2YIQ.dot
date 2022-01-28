@@ -1,0 +1,103 @@
+digraph RGB2YIQ {
+
+
+  graph [bgcolor=transparent]
+
+
+  /* nodes (row 0) */
+  0 [label="load"];
+  1 [label="load"];
+
+
+  /* edges (row 0) */
+  0->2 [label=""];
+  0->3 [label=""];
+  0->7 [label=""];
+  1->4 [label=""];
+  1->5 [label=""];
+  1->8 [label=""];
+
+
+  /* nodes (row 1) */
+  2 [label="mul"];
+  3 [label="mul"];
+  4 [label="mul"];
+  5 [label="mul"];
+  6 [label="load"];
+  7 [label="mul"];
+  8 [label="mul"];
+
+
+  /* edges (row 1) */
+  2->9 [label=""];
+  3->10 [label=""];
+  4->9 [label=""];
+  5->10 [label=""];
+  6->11 [label=""];
+  6->12 [label=""];
+  6->13 [label=""];
+  7->14 [label=""];
+  8->14 [label=""];
+
+
+  /* nodes (row 2) */
+  9 [label="add"];
+  10 [label="add"];
+  11 [label="mul"];
+  12 [label="mul"];
+  13 [label="mul"];
+  14 [label="add"];
+
+
+  /* edges (row 2) */
+  9->15 [label=""];
+  10->16 [label=""];
+  11->15 [label=""];
+  12->16 [label=""];
+  13->17 [label=""];
+  14->17 [label=""];
+
+
+  /* nodes (row 3) */
+  15 [label="add"];
+  16 [label="add"];
+  17 [label="add"];
+
+
+  /* edges (row 3) */
+  15->18 [label=""];
+  16->19 [label=""];
+  17->20 [label=""];
+
+
+  /* nodes (row 4) */
+  18 [label="add"];
+  19 [label="add"];
+  20 [label="add"];
+
+
+  /* edges (row 4) */
+  18->21 [label=""];
+  19->22 [label=""];
+  20->23 [label=""];
+
+
+  /* nodes (row 5) */
+  21 [label="ashr"];
+  22 [label="ashr"];
+  23 [label="ashr"];
+
+
+  /* edges (row 5) */
+  21->24 [label=""];
+  22->25 [label=""];
+  23->26 [label=""];
+
+
+  /* nodes (row 6) */
+  24 [label="store"];
+  25 [label="store"];
+  26 [label="store"];
+
+
+}
