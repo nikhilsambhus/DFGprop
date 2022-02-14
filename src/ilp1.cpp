@@ -7,7 +7,7 @@ class GraphPart1 {
 	private:
 		glp_prob *lp; //lp object
 		int numEdges, numVertices, numParts;
-		int RSize = 3; //size of partition
+		int RSize = 2; //size of partition
 	public:
 
 	GraphPart1(string name) {
@@ -111,7 +111,12 @@ class GraphPart1 {
 			cout << endl;
 		}
 
-		glp_load_matrix(lp, numParts * numVertices * numParts, ia, ja, arr);
+		//glp_load_matrix(lp, numParts * numVertices * numParts, ia, ja, arr);
+
+		//set rows of constraints
+		for(int i = 0; i < numParts; i++) {
+			glp_set_mat_row(lp, numVertices + i + 1, numVertices * numParts, &ja[i*(numVertices*numParts)], &arr[i*(numVertices * numParts)]);
+		}
 
 
 	}
@@ -126,7 +131,7 @@ class GraphPart1 {
 		glp_simplex(lp, NULL);
 		glp_intopt(lp, &parm);
 		double z = glp_get_obj_val(lp);
-		cout << z << endl;
+		cout << "Objective function output "<< z << endl;
 
 		//print values
 		for(int i = 0; i < numVertices; i++) {
