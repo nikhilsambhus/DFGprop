@@ -26,43 +26,11 @@ class GraphPart1 {
 	//add uniqueness constraint of mapping n vertices to p partitions
 	void addUniqueCons1() {
 		//numVertices * numParts coef matrix for constraints
-		int *ia = new int [1 + numVertices * numVertices * numParts];
-		int *ja = new int [1 + numVertices * numVertices * numParts];
-		double *arr = new double [1 + numVertices * numVertices * numParts];
+		int *ja = new int [1 + numParts];
+		double *arr = new double [1 + numParts];
 		
-		glp_add_rows(lp, numVertices); //numVertices rows constraints
-		for(int j = 0; j < numVertices; j++) {
-			glp_set_row_bnds(lp, j + 1, GLP_FX, 1.0, 1.0);
-		}
-	
-		//initialize to 0 all coefs
-		int count = 1;
-		for(int i = 0; i < numVertices; i++) {
-			for(int j = 0; j < numVertices * numParts; j++) {
-				ia[count] = i + 1;
-				ja[count] = j + 1;
-				arr[count] = 0.0;
-				count++;
-			}
-		}
-
-
-		//set constraints to 1
-		for(int i = 0; i < numVertices; i++) {
-			for(int j = 0; j < numParts; j++) {
-				//row + shift + index
-				arr[i*(numVertices * numParts) + i*numParts + j + 1] = 1.0;
-			}
-		}
-
-		//debug
-		for(int i = 0; i < numVertices; i++) {
-			for(int j = 0; j < numVertices * numParts; j++) {
-				cout << arr[i*(numVertices * numParts) + j + 1] << " ";
-			}
-			cout << endl;
-		}
-
+		int nr = glp_add_rows(lp, numVertices); //numVertices rows constraints
+		
 		//add all vertices-parts mapping as cols
 		glp_add_cols(lp, numVertices * numParts);
 		for(int i = 0; i < (numVertices * numParts); i++) {
@@ -71,52 +39,45 @@ class GraphPart1 {
 			glp_set_col_kind(lp, i + 1, GLP_BV);
 		}
 
-		glp_load_matrix(lp, numVertices * numVertices * numParts, ia, ja, arr);
+		//set rows bound sum euqal to 1.0
+		for(int j = 0; j < numVertices; j++) {
+			glp_set_row_bnds(lp, nr + j, GLP_FX, 1.0, 1.0);
+		}
+
+		//set constraints matrix to 1 for a given vertex in all partitions as only vertex needs to get mapped
+		for(int i = 0; i < numVertices; i++) {
+			for(int j = 0; j < numParts; j++) {
+				//shift by numParts * row_id + index
+				ja[j + 1] = i * numParts + j + 1;
+				arr[j + 1] = 1.0;
+			}
+			glp_set_mat_row(lp, nr + i, numParts, ja, arr);
+		}
+
 	}
 
 	void addSizeCons2() {
-		int *ia = new int [1 + numParts * numVertices * numParts];
-		int *ja = new int [1 + numParts * numVertices * numParts];
-		double *arr = new double [1 + numParts * numVertices * numParts];
+		int *ja = new int [1 + numVertices];
+		double *arr = new double [1 + numVertices];
 
-		glp_add_rows(lp, numParts); //numParts rows constraints
+		int nr = glp_add_rows(lp, numParts); //numParts rows constraints
 		for(int j = 0; j < numParts; j++) {
-			glp_set_row_bnds(lp, numVertices + j + 1, GLP_UP, 0.0, RSize);
+			glp_set_row_bnds(lp, nr + j, GLP_UP, 0.0, RSize);
 		}
 
-		//initialize to 0 all coefs
-		int count = 1;
-		for(int i = 0; i < numParts; i++) {
-			for(int j = 0; j < numVertices * numParts; j++) {
-				ia[count] = numVertices + i + 1;
-				ja[count] = j + 1;
-				arr[count] = 0.0;
-				count++;
-			}
-		}
-		
-		//set constraints to less than Rsize
+		//set constraints to less than Rsize for all vertices of a partition
 		for(int i = 0; i < numParts; i++) {
 			for(int j = 0; j < numVertices; j++) {
 				//row + shift by i + partition number id
-				arr[i*(numVertices * numParts) + i + j*numParts + 1] = 1.0;
+				ja[j + 1] = i + j*numParts + 1;
+				arr[j + 1] = 1.0;
+			//	arr[i*(numVertices * numParts) + i + j*numParts + 1] = 1.0;
 			}
-		}
-
-		//debug
-		for(int i = 0; i < numParts; i++) {
-			for(int j = 0; j < numVertices * numParts; j++) {
-				cout << arr[i*(numVertices * numParts) + j + 1] << " ";
-			}
+			glp_set_mat_row(lp, nr + i, numVertices, ja, arr);
 			cout << endl;
 		}
 
-		//glp_load_matrix(lp, numParts * numVertices * numParts, ia, ja, arr);
 
-		//set rows of constraints
-		for(int i = 0; i < numParts; i++) {
-			glp_set_mat_row(lp, numVertices + i + 1, numVertices * numParts, &ja[i*(numVertices*numParts)], &arr[i*(numVertices * numParts)]);
-		}
 
 
 	}
