@@ -7,24 +7,31 @@ class GraphPart1 {
 	private:
 		glp_prob *lp; //lp object
 		int numEdges, numVertices, numParts;
-		int RSize = 2; //size of partition
+		int RSize; //size of partition
 	public:
 
 	GraphPart1(string name) {
 		lp = glp_create_prob();
-		
 		glp_set_prob_name(lp, name.c_str()); //create lp object with name in constructor
 	}
 
+	~GraphPart1() {
+		glp_delete_prob(lp);
+	}
+
+	void eraseProb() {
+		glp_erase_prob(lp);
+	}
 	//set properties of graph and partitions
-	void setGraphProp(int n, int e, int p) {
+	void setGraphProp(int n, int e, int p, int size) {
 		numEdges = e;
 		numVertices = n;
 		numParts = p;
+		RSize = size;
 	}
 
 	//add uniqueness constraint of mapping n vertices to p partitions
-	void addUniqueCons1() {
+	void addUniqueCons() {
 		//numVertices * numParts coef matrix for constraints
 		int *ja = new int [1 + numParts];
 		double *arr = new double [1 + numParts];
@@ -56,7 +63,7 @@ class GraphPart1 {
 
 	}
 
-	void addSizeCons2() {
+	void addSizeCons() {
 		int *ja = new int [1 + numVertices];
 		double *arr = new double [1 + numVertices];
 
@@ -82,15 +89,60 @@ class GraphPart1 {
 
 	}
 
-	void solve() {
+	void addEdgePrec() {
 
+		int numEdges = 2;
+		int *ja = new int [1 + 2*numParts];
+		double *arr = new double [1 + 2*numVertices];
+		int nr = glp_add_rows(lp, numEdges); //numEdges rows constraints
+
+		//add numEdges rows with limit to <= 0
+		for(int j = 0; j < numEdges; j++) {
+			glp_set_row_bnds(lp, nr + j, GLP_UP, 0.0, 0.0);
+		}
+	
+		for(int i = 0; i < numEdges; i++) {
+			//for src of edge do summation
+			
+			int src = 4;
+			int dest = 0;
+			
+			if(i == 1) { 
+				src = 3;
+				dest = 0;
+			}
+			//partition number * Xvertex_partition
+			for(int i = 0; i < numParts; i++) {
+				ja[i + 1] = (src*numParts) + i + 1;
+				arr[i + 1] = (i + 1) * 1;
+			}
+
+			//-partition number * Xvertex_partition
+			for(int i = 0; i < numParts; i++) {
+				ja[numParts + i + 1] = (dest*numParts) + i + 1;
+				arr[numParts + i + 1] = -(i + 1) * 1;
+			}
+			
+			glp_set_mat_row(lp, nr + i, 2*numParts, ja, arr);
+
+		}
+		
+
+
+
+		
+	}
+
+	bool solve() {
 		//solve equations
 		glp_set_obj_dir(lp, GLP_MAX);
 		glp_iocp parm;
 		glp_init_iocp(&parm);
 		parm.presolve = GLP_ON;
 		glp_simplex(lp, NULL);
-		glp_intopt(lp, &parm);
+		if(glp_intopt(lp, &parm) != 0) {
+			return false;
+		}
 		double z = glp_get_obj_val(lp);
 		cout << "Objective function output "<< z << endl;
 
@@ -104,17 +156,29 @@ class GraphPart1 {
 			}
 		}
 		
+		return true;
 
 	}
 
 };
 int main() {
 	
-	GraphPart1 gp1("basic");
-	gp1.setGraphProp(5, 5, 3);
-	gp1.addUniqueCons1();
-	gp1.addSizeCons2();
-	gp1.solve();
-	
+	int numVer = 5;
+	int numEdges = 5;
+	int numParts = 0;
+	int Rsize = 2;
+
+	GraphPart1 *gp1 = new GraphPart1("basic");
+
+	do {
+		gp1->eraseProb();
+		numParts = numParts + 1;
+		gp1->setGraphProp(numVer, numEdges, numParts, Rsize);
+		gp1->addUniqueCons();
+		gp1->addSizeCons();
+		gp1->addEdgePrec();
+		cout << "Trying with number of partitions " << numParts << endl;
+	} while(gp1->solve() == false);
+
 	return 0;
 }
