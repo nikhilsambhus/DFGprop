@@ -1,43 +1,49 @@
 #include <iostream>
 #include <string>
 #include "glpk.h"
+#include "Edge.h"
+#include "Graph.h"
 using namespace std;
 
-class GraphPart1 {
+class GraphILP {
 	private:
 		glp_prob *lp; //lp object
 		int numEdges, numVertices, numParts;
 		int RSize; //size of partition
+		DAG graph;
 	public:
 
-	GraphPart1(string name) {
-		lp = glp_create_prob();
-		glp_set_prob_name(lp, name.c_str()); //create lp object with name in constructor
+	GraphILP(string name, DAG gp, int rsize) {
+		this->graph = gp;
+		this->RSize = rsize;
+		this->numVertices = gp.getNumNodes();
+		this->numEdges = gp.getNumEdges();
+
+		this->numParts = numVertices / RSize + 1; //set initial partition size to total vertices divided by partition size
+		//numParts = 1;
+
+		this->lp = glp_create_prob();
+		glp_set_prob_name(this->lp, name.c_str()); //create lp object with name in constructor
 	}
 
-	~GraphPart1() {
+	~GraphILP() {
 		glp_delete_prob(lp);
 	}
 
 	void eraseProb() {
 		glp_erase_prob(lp);
 	}
-	//set properties of graph and partitions
-	void setGraphProp(int n, int e, int p, int size) {
-		numEdges = e;
-		numVertices = n;
-		numParts = p;
-		RSize = size;
+	//increment number of partitions
+	void incParts() {
+		numParts++;
 	}
 
-	//add uniqueness constraint of mapping n vertices to p partitions
-	void addUniqueCons() {
-		//numVertices * numParts coef matrix for constraints
-		int *ja = new int [1 + numParts];
-		double *arr = new double [1 + numParts];
-		
-		int nr = glp_add_rows(lp, numVertices); //numVertices rows constraints
-		
+	int getNumParts() {
+		return numParts;
+	}
+
+
+	void addColVars() {
 		//add all vertices-parts mapping as cols
 		glp_add_cols(lp, numVertices * numParts);
 		for(int i = 0; i < (numVertices * numParts); i++) {
@@ -46,7 +52,17 @@ class GraphPart1 {
 			glp_set_col_kind(lp, i + 1, GLP_BV);
 		}
 
-		//set rows bound sum euqal to 1.0
+
+	}
+	//add uniqueness constraint of mapping n vertices to p partitions
+	void addUniqueCons() {
+		//numVertices * numParts coef matrix for constraints
+		int *ja = new int [1 + numParts];
+		double *arr = new double [1 + numParts];
+		
+		int nr = glp_add_rows(lp, numVertices); //numVertices rows constraints
+		
+			//set rows bound sum euqal to 1.0
 		for(int j = 0; j < numVertices; j++) {
 			glp_set_row_bnds(lp, nr + j, GLP_FX, 1.0, 1.0);
 		}
@@ -78,10 +94,8 @@ class GraphPart1 {
 				//row + shift by i + partition number id
 				ja[j + 1] = i + j*numParts + 1;
 				arr[j + 1] = 1.0;
-			//	arr[i*(numVertices * numParts) + i + j*numParts + 1] = 1.0;
 			}
 			glp_set_mat_row(lp, nr + i, numVertices, ja, arr);
-			cout << endl;
 		}
 
 
@@ -91,26 +105,25 @@ class GraphPart1 {
 
 	void addEdgePrec() {
 
-		int numEdges = 2;
 		int *ja = new int [1 + 2*numParts];
 		double *arr = new double [1 + 2*numVertices];
 		int nr = glp_add_rows(lp, numEdges); //numEdges rows constraints
 
 		//add numEdges rows with limit to <= 0
-		for(int j = 0; j < numEdges; j++) {
-			glp_set_row_bnds(lp, nr + j, GLP_UP, 0.0, 0.0);
+		int i = 0;
+		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
+			glp_set_row_bnds(lp, nr + i, GLP_UP, 0.0, 0.0);
+			i++;
 		}
-	
-		for(int i = 0; i < numEdges; i++) {
+
+
+		i = 0;
+		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
 			//for src of edge do summation
 			
-			int src = 4;
-			int dest = 0;
+			uint32_t src = it->getSrcNodeID();
+			uint32_t dest = it->getDestNodeID();
 			
-			if(i == 1) { 
-				src = 3;
-				dest = 0;
-			}
 			//partition number * Xvertex_partition
 			for(int i = 0; i < numParts; i++) {
 				ja[i + 1] = (src*numParts) + i + 1;
@@ -124,7 +137,7 @@ class GraphPart1 {
 			}
 			
 			glp_set_mat_row(lp, nr + i, 2*numParts, ja, arr);
-
+			i++;
 		}
 		
 
@@ -151,7 +164,7 @@ class GraphPart1 {
 			for(int j = 0; j < numParts; j++) {
 				//cout << glp_get_col_prim(lp, i * numParts + j + 1) << endl; 
 				if(glp_mip_col_val(lp, i * numParts + j + 1)) {
-					cout << "Vertex " << i + 1 << " is mapped to " << j + 1 <<  endl;
+					cout << "Vertex id " << i  << " is mapped to " << j + 1 <<  endl;
 				}
 			}
 		}
@@ -161,24 +174,41 @@ class GraphPart1 {
 	}
 
 };
-int main() {
+
+/*Arguments required 
+	graph file name
+	Rsize
+*/
+int main(int argc, char **argv) {
 	
-	int numVer = 5;
-	int numEdges = 5;
-	int numParts = 0;
-	int Rsize = 2;
+	if(argc != 3) {
+		cout << "Too few arguments, 2 expected" << endl;
+		return -1;
+	}
+	DAG gp;
+	try {
+		gp = DAG(argv[1]);
+	} catch(string ex) {
+		cout << ex << endl;
+	}
+	
+	GraphILP *gp1 = new GraphILP("basic", gp, atoi(argv[2]));
 
-	GraphPart1 *gp1 = new GraphPart1("basic");
-
-	do {
+	
+	int iterations = 10;
+	while(iterations) {
 		gp1->eraseProb();
-		numParts = numParts + 1;
-		gp1->setGraphProp(numVer, numEdges, numParts, Rsize);
+		gp1->addColVars();
 		gp1->addUniqueCons();
 		gp1->addSizeCons();
 		gp1->addEdgePrec();
-		cout << "Trying with number of partitions " << numParts << endl;
-	} while(gp1->solve() == false);
-
+		cout << "Trying next with number of partitions " << gp1->getNumParts() << endl;
+		if(gp1->solve() == true) {
+			cout << "Converged at total number of partitions equal to " << gp1->getNumParts() << endl;
+			break;
+		}
+		gp1->incParts();
+		iterations--;
+	}
 	return 0;
 }
