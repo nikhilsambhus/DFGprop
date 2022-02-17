@@ -3,6 +3,7 @@
 #include "glpk.h"
 #include "Edge.h"
 #include "Graph.h"
+#include <cmath>
 using namespace std;
 
 class GraphILP {
@@ -19,7 +20,7 @@ class GraphILP {
 		this->numVertices = gp.getNumNodes();
 		this->numEdges = gp.getNumEdges();
 
-		this->numParts = numVertices / RSize + 1; //set initial partition size to total vertices divided by partition size
+		this->numParts = ceil(float(numVertices) / float(RSize)); //set initial partition size to total vertices divided by partition size
 		//numParts = 1;
 
 		this->lp = glp_create_prob();
