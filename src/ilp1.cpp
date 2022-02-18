@@ -4,6 +4,7 @@
 #include "Edge.h"
 #include "Graph.h"
 #include <cmath>
+#include <bits/stdc++.h>
 using namespace std;
 
 class GraphILP {
@@ -12,6 +13,8 @@ class GraphILP {
 		int numEdges, numVertices, numParts;
 		int RSize; //size of partition
 		DAG graph;
+		vector<map<pair<int, int>, int>> klMapVec;
+
 	public:
 
 	GraphILP(string name, DAG gp, int rsize) {
@@ -57,15 +60,18 @@ class GraphILP {
 		//add columns for each edge (parts * parts) for communication objective function
 		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
 			cls = glp_add_cols(lp, numParts * numParts);
+			map<pair<int, int>, int> klMap;
 			for(int k = 0; k < numParts; k++) {
-				for(int l = 0; l < numParts; l++) {
-					cout << cls + (k * numParts + l) << " ";
-					glp_set_obj_coef(lp, cls + (k * numParts + l), 1.0);
-					glp_set_col_bnds(lp, cls + (k * numParts + l), GLP_DB, 0.0, 1.0);
-					glp_set_col_kind(lp, cls + (k * numParts + l), GLP_BV);
+				for(int l = k + 1; l < numParts; l++) {
+					klMap[{k ,l}] = cls;
+					glp_set_obj_coef(lp, cls, 1.0);
+					glp_set_col_bnds(lp, cls, GLP_DB, 0.0, 1.0);
+					glp_set_col_kind(lp, cls, GLP_BV);
+					cls++;
 				}
 				cout << endl;
 			}
+			this->klMapVec.push_back(klMap);
 		}
 
 
@@ -127,8 +133,9 @@ class GraphILP {
 		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
 			uint32_t src = it->getSrcNodeID();
 			uint32_t dest = it->getDestNodeID();
+			
 			for(int k = 0; k < numParts; k++) {
-				for(int l = 0; l < numParts; l++) {
+				for(int l = k + 1; l < numParts; l++) {
 					int nr = glp_add_rows(lp, 2);
 
 					//first equation
@@ -137,7 +144,8 @@ class GraphILP {
 					//Xj_l
 					ja[2] = (dest * numParts) + l + 1;
 					//Xi_j^k_l
-					ja[3] = (numVertices * numParts) + (i * numParts * numParts) +  (k * numParts) + l + 1;
+					ja[3] = this->klMapVec[i][{k ,l}];
+					//ja[3] = (numVertices * numParts) + (i * numParts * numParts) +  (k * numParts) + l + 1;
 					arr[1] = arr[2] = 1.0;
 					arr[3] = -1.0;
 
@@ -153,10 +161,7 @@ class GraphILP {
 					glp_set_mat_row(lp, nr + 1, 3, ja, arr);
 					glp_set_row_bnds(lp, nr + 1, GLP_UP, 0.0, 0.0);
 
-					cout << ja[1] << " " << ja[2] << " " << ja[3] << endl;
 				}
-
-
 
 			}
 			i++;
@@ -208,6 +213,28 @@ class GraphILP {
 
 		
 	}
+	
+	void printProb() {
+		int ja[1024];
+		double arr[1024];
+		int nrows = glp_get_num_rows(lp);
+		for(int i = 0; i < nrows; i++) {
+			int nelems = glp_get_mat_row(lp, i + 1, ja, arr);
+			for(int j = 0; j < nelems; j++) {
+				cout << arr[j + 1] << "*" << ja[j + 1] << " "; 
+			}
+			double ub = glp_get_row_ub(lp, i + 1);
+			cout << "\t" << ub;
+			cout << endl;
+		}
+
+		int ncols = glp_get_num_cols(lp);
+		for(int  i = 0; i < ncols; i++) {
+			double coef = glp_get_obj_coef(lp, i + 1);
+			cout << coef << " ";
+		}
+		cout << endl;
+	}
 
 	bool solve() {
 		//solve equations
@@ -219,7 +246,7 @@ class GraphILP {
 		if(glp_intopt(lp, &parm) != 0) {
 			return false;
 		}
-		double z = glp_get_obj_val(lp);
+		double z = glp_mip_obj_val(lp);
 		cout << "Objective function output "<< z << endl;
 
 		//print values
@@ -231,7 +258,15 @@ class GraphILP {
 				}
 			}
 		}
-		
+
+
+		/*int ncols = glp_get_num_cols(lp);
+		for(int  i = 0; i < ncols; i++) {
+			double ans = glp_mip_col_val(lp, i + 1);
+			cout << ans << " ";
+		}
+		cout << endl;
+		*/
 		return true;
 
 	}
@@ -267,6 +302,7 @@ int main(int argc, char **argv) {
 		gp1->addEdgePrec();
 		gp1->addCommCons();
 		cout << "Trying next with number of partitions " << gp1->getNumParts() << endl;
+		//gp1->printProb();
 		if(gp1->solve() == true) {
 			cout << "Converged at total number of partitions equal to " << gp1->getNumParts() << endl;
 			break;
