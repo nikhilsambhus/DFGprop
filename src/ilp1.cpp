@@ -46,11 +46,26 @@ class GraphILP {
 
 	void addColVars() {
 		//add all vertices-parts mapping as cols
-		glp_add_cols(lp, numVertices * numParts);
+		int cls = glp_add_cols(lp, numVertices * numParts);
 		for(int i = 0; i < (numVertices * numParts); i++) {
-			glp_set_obj_coef(lp, i + 1, 1.0);
-			glp_set_col_bnds(lp, i + 1, GLP_DB, 0.0, 1.0);
-			glp_set_col_kind(lp, i + 1, GLP_BV);
+			glp_set_obj_coef(lp, cls + i, 0.0);
+			glp_set_col_bnds(lp, cls + i, GLP_DB, 0.0, 1.0);
+			glp_set_col_kind(lp, cls + i, GLP_BV);
+		} 
+		
+
+		//add columns for each edge (parts * parts) for communication objective function
+		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
+			cls = glp_add_cols(lp, numParts * numParts);
+			for(int k = 0; k < numParts; k++) {
+				for(int l = 0; l < numParts; l++) {
+					cout << cls + (k * numParts + l) << " ";
+					glp_set_obj_coef(lp, cls + (k * numParts + l), 1.0);
+					glp_set_col_bnds(lp, cls + (k * numParts + l), GLP_DB, 0.0, 1.0);
+					glp_set_col_kind(lp, cls + (k * numParts + l), GLP_BV);
+				}
+				cout << endl;
+			}
 		}
 
 
@@ -104,6 +119,53 @@ class GraphILP {
 
 	}
 
+	void addCommCons() {
+
+		int *ja = new int[1 + 3]; //3 terms in the each equation
+		double *arr = new double[1 + 3]; //3 terms in the each equation
+		int i = 0;
+		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
+			uint32_t src = it->getSrcNodeID();
+			uint32_t dest = it->getDestNodeID();
+			for(int k = 0; k < numParts; k++) {
+				for(int l = 0; l < numParts; l++) {
+					int nr = glp_add_rows(lp, 2);
+
+					//first equation
+					//Xi_k
+					ja[1] = (src * numParts) + k + 1;
+					//Xj_l
+					ja[2] = (dest * numParts) + l + 1;
+					//Xi_j^k_l
+					ja[3] = (numVertices * numParts) + (i * numParts * numParts) +  (k * numParts) + l + 1;
+					arr[1] = arr[2] = 1.0;
+					arr[3] = -1.0;
+
+					glp_set_mat_row(lp, nr, 3, ja, arr);
+					glp_set_row_bnds(lp, nr, GLP_UP, 0.0, 1.0);
+
+
+					//second equation
+					//format same, coefs different
+					arr[1] = arr[2] = -1.0;
+					arr[3] = 2.0;
+
+					glp_set_mat_row(lp, nr + 1, 3, ja, arr);
+					glp_set_row_bnds(lp, nr + 1, GLP_UP, 0.0, 0.0);
+
+					cout << ja[1] << " " << ja[2] << " " << ja[3] << endl;
+				}
+
+
+
+			}
+			i++;
+		}
+
+
+
+	}
+
 	void addEdgePrec() {
 
 		int *ja = new int [1 + 2*numParts];
@@ -149,7 +211,7 @@ class GraphILP {
 
 	bool solve() {
 		//solve equations
-		glp_set_obj_dir(lp, GLP_MAX);
+		glp_set_obj_dir(lp, GLP_MIN);
 		glp_iocp parm;
 		glp_init_iocp(&parm);
 		parm.presolve = GLP_ON;
@@ -203,6 +265,7 @@ int main(int argc, char **argv) {
 		gp1->addUniqueCons();
 		gp1->addSizeCons();
 		gp1->addEdgePrec();
+		gp1->addCommCons();
 		cout << "Trying next with number of partitions " << gp1->getNumParts() << endl;
 		if(gp1->solve() == true) {
 			cout << "Converged at total number of partitions equal to " << gp1->getNumParts() << endl;
