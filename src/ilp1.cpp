@@ -12,14 +12,16 @@ class GraphILP {
 		glp_prob *lp; //lp object
 		int numEdges, numVertices, numParts;
 		int RSize; //size of partition
-		DAG graph;
-		vector<map<pair<int, int>, int>> klMapVec;
+		int TSize;//size of transaction
+		DAG graph;//input graph
+		vector<map<pair<int, int>, int>> klMapVec;//map of kl values for cross partition edges
 
 	public:
 
-	GraphILP(string name, DAG gp, int rsize) {
+	GraphILP(string name, DAG gp, int rsize, int tsize) {
 		this->graph = gp;
 		this->RSize = rsize;
+		this->TSize = tsize;
 		this->numVertices = gp.getNumNodes();
 		this->numEdges = gp.getNumEdges();
 
@@ -55,6 +57,8 @@ class GraphILP {
 			glp_set_col_bnds(lp, cls + i, GLP_DB, 0.0, 1.0);
 			glp_set_col_kind(lp, cls + i, GLP_BV);
 		} 
+
+		this->klMapVec.clear();
 		
 
 		//add columns for each edge (parts * parts) for communication objective function
@@ -75,6 +79,26 @@ class GraphILP {
 		}
 
 
+	}
+
+	void addTransCons() {
+		for(int k = 0; k < numParts; k++) {
+			vector<double> arr;
+			vector<int> ja;
+			arr.push_back(0);
+			ja.push_back(0);//0th element not used
+			for(int l = k + 1; l < numParts; l++) {
+				for(auto klMap: this->klMapVec) {
+					ja.push_back(klMap[{k, l}]);
+					arr.push_back(1);
+				}
+			}
+
+			int nr = glp_add_rows(lp, 1); //add one for k's outgoing edges
+			glp_set_mat_row(lp, nr, arr.size() - 1, ja.data(), arr.data());
+			glp_set_row_bnds(lp, nr, GLP_UP, 0.0, TSize);
+
+		}
 	}
 	//add uniqueness constraint of mapping n vertices to p partitions
 	void addUniqueCons() {
@@ -250,11 +274,13 @@ class GraphILP {
 		cout << "Objective function output "<< z << endl;
 
 		//print values
+		int countVP = 0;
 		for(int i = 0; i < numVertices; i++) {
 			for(int j = 0; j < numParts; j++) {
 				//cout << glp_get_col_prim(lp, i * numParts + j + 1) << endl; 
 				if(glp_mip_col_val(lp, i * numParts + j + 1)) {
-					cout << "Vertex id " << i  << " is mapped to " << j + 1 <<  endl;
+					//cout << "Vertex id " << i  << " is mapped to " << j + 1 <<  endl;
+					countVP++;
 				}
 			}
 		}
@@ -267,7 +293,7 @@ class GraphILP {
 		}
 		cout << endl;
 		*/
-		return true;
+		return (countVP == numVertices); //return success if all vertices mapped to some partition
 
 	}
 
@@ -279,8 +305,8 @@ class GraphILP {
 */
 int main(int argc, char **argv) {
 	
-	if(argc != 3) {
-		cout << "Too few arguments, 2 expected" << endl;
+	if(argc != 4) {
+		cout << "Too few arguments, 3 expected" << endl;
 		return -1;
 	}
 	DAG gp;
@@ -290,7 +316,7 @@ int main(int argc, char **argv) {
 		cout << ex << endl;
 	}
 	
-	GraphILP *gp1 = new GraphILP("basic", gp, atoi(argv[2]));
+	GraphILP *gp1 = new GraphILP("basic", gp, atoi(argv[2]), atoi(argv[3]));
 
 	
 	int iterations = 10;
@@ -301,6 +327,7 @@ int main(int argc, char **argv) {
 		gp1->addSizeCons();
 		gp1->addEdgePrec();
 		gp1->addCommCons();
+		gp1->addTransCons();
 		cout << "Trying next with number of partitions " << gp1->getNumParts() << endl;
 		//gp1->printProb();
 		if(gp1->solve() == true) {
