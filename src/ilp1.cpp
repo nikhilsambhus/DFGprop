@@ -140,38 +140,6 @@ class GraphILP {
 
 	}
 
-	void ValidateTrans() {
-		cout << "Transaction constraints o/p, all to be less than " << TSize << "checked by asserts";
-
-		//(l > k) X^kl_ij < T
-		for(int k = 0; k < numParts - 1; k++) {
-			double count = 0;
-			for(int l = k + 1; l < numParts; l++) {
-				for(auto klMap: this->klMapVec) {
-					count += glp_mip_col_val(lp, klMap[{k, l}]);
-				}
-			}
-
-			cout << count << " ";
-			assert(count <= TSize);
-		}
-		
-		//(k < l) X^kl_ij < T
-		for(int l = 1; l < numParts; l++) {
-			double count = 0;
-			for(int k = 0; k < l; k++) {
-				for(auto klMap: this->klMapVec) {
-					count += glp_mip_col_val(lp, klMap[{k, l}]);
-				}
-			}
-
-			cout << count << " ";
-			assert(count <= TSize);
-
-		}
-
-		cout << endl;
-	}
 	//add uniqueness constraint of mapping n vertices to p partitions
 	void addUniqueCons() {
 		//numVertices * numParts coef matrix for constraints
@@ -348,43 +316,6 @@ class GraphILP {
 		cout << "Comm 2 Constraints added = " << nCons << endl;
 	}
 
-	void ValidateComm2() {
-		int i = 0;
-		cout << "Comm2 constraints o/p should all be 0, checked by asserts";	
-		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
-			uint32_t src_i = it->getSrcNodeID();
-			uint32_t dest_j = it->getDestNodeID();
-
-			//first constraint sum (p < l) Xi_j^p_l = Xj_l
-			for(int l = 0; l < numParts; l++) {
-				int count = 0;
-				for(int p = 0; p <= l; p++) {
-					count += glp_mip_col_val(lp, klMapVec[i][{p, l}]);
-				}
-				count -= glp_mip_col_val(lp, ijMap[{dest_j, l}]);
-
-				//cout << count << " ";
-				assert(count == 0);
-			}
-		
-			//second constraint sum (p > k) Xi_j^k_p = Xi_k
-			for(int k = 0; k < numParts; k++) {
-				int count = 0;
-				for(int p = k; p < numParts; p++) {
-					count += glp_mip_col_val(lp, klMapVec[i][{k, p}]);
-				}
-				count -= glp_mip_col_val(lp, ijMap[{src_i, k}]);
-				//cout << count << " ";
-				assert(count == 0);
-			}
-
-			i++;
-		}
-		cout << endl;
-
-
-
-	}
 	void addEdgePrec() {
 
 		int *ja = new int [1 + 2*numParts];
@@ -402,10 +333,10 @@ class GraphILP {
 		i = 0;
 		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
 			//for src of edge do summation
-			
+
 			uint32_t src = it->getSrcNodeID();
 			uint32_t dest = it->getDestNodeID();
-			
+
 			//partition number * Xvertex_partition
 			for(int i = 0; i < numParts; i++) {
 				ja[i + 1] = (src*numParts) + i + 1;
@@ -417,23 +348,25 @@ class GraphILP {
 				ja[numParts + i + 1] = (dest*numParts) + i + 1;
 				arr[numParts + i + 1] = -(i + 1) * 1;
 			}
-			
+
 			glp_set_mat_row(lp, nr + i, 2*numParts, ja, arr);
 			i++;
 		}
 		
-
-
-
-		
 	}
 
-	void ValidateEdgePrec() {
-		cout << "Asserting edge precedence" << endl;
+	void ValidatePrecTrans() {
+		cout << "Asserting edge precedence; transaction limits" << endl;
+		map<int, int> inPartCounts;//store incoming edges onto this partition 
+		map<int, int> outPartCounts; //store outgoing edges from this partition
+		for(int i = 0; i < numParts; i++) {
+			inPartCounts[i] = 0;
+			outPartCounts[i] = 0;
+		}
 		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
 			uint32_t src = it->getSrcNodeID();
 			uint32_t dest = it->getDestNodeID();
-			//find source parrtition
+			//find source partition
 			int srcPart = -1;
 			
 			for(int j = 0; j < numParts; j++) {
@@ -444,7 +377,7 @@ class GraphILP {
 			}
 			assert(srcPart != -1); //mapping should be found
 
-			//find destination parrtition
+			//find destination partition
 			int destPart = -1;
 			
 			for(int j = 0; j < numParts; j++) {
@@ -456,6 +389,17 @@ class GraphILP {
 			assert(srcPart != -1); //mapping should be found
 			assert(srcPart <= destPart); //partition of source should be less than destination
 
+			if(srcPart < destPart) { //for edge not present in the same partition
+				outPartCounts[srcPart]++; //increment appropriate transaction counts
+				inPartCounts[destPart]++;
+			}
+
+		}
+
+		//Assert cross partition counts are meet
+		for(int i = 0; i < numParts; i++) {
+			assert(inPartCounts[i] <= TSize);
+			assert(outPartCounts[i] <= TSize);
 		}
 	}
 	
@@ -562,11 +506,8 @@ int main(int argc, char **argv) {
 		if(gp1->solve() == true) {
 			cout << "Converged at total number of partitions equal to " << gp1->getNumParts() << endl;
 			gp1->ValidateUniq();
-			gp1->ValidateEdgePrec();
 			gp1->ValidateSize();
-
-			gp1->ValidateComm2();
-			gp1->ValidateTrans();
+			gp1->ValidatePrecTrans();
 			break;
 		}
 		gp1->incParts();
