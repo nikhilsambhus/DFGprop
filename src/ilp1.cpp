@@ -56,6 +56,7 @@ class GraphILP {
 
 		this->ijMap.clear();
 		int cls = glp_add_cols(lp, numVertices * numParts);
+		int count = 0;
 		for(int i = 0; i < numVertices; i++) {
 			for(int j = 0; j < numParts; j++) {
 				ijMap[{i, j}] = cls;
@@ -63,30 +64,39 @@ class GraphILP {
 				glp_set_col_bnds(lp, cls, GLP_DB, 0.0, 1.0);
 				glp_set_col_kind(lp, cls, GLP_BV);
 				cls++;
+				count++;
 			} 
 		}
 
+		cout << "Xij variable added count = " << count << endl;
+
 		this->klMapVec.clear();
+		count = 0;
 		//add columns for each edge (parts * parts) for communication objective function
 		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
 			map<pair<int, int>, int> klMap;
-			for(int k = 0; k < numParts - 1; k++) {
-				for(int l = k + 1; l < numParts; l++) {
+			for(int k = 0; k < numParts; k++) {
+				for(int l = k; l < numParts; l++) {
 					cls = glp_add_cols(lp, 1);
 					klMap[{k ,l}] = cls;
-					glp_set_obj_coef(lp, cls, 1.0);
+					if(k != l) {// do not add edges in same partition
+						glp_set_obj_coef(lp, cls, 1.0);
+					}
 					glp_set_col_bnds(lp, cls, GLP_DB, 0.0, 1.0);
 					glp_set_col_kind(lp, cls, GLP_BV);
+					count++;
 				}
 			}
 			this->klMapVec.push_back(klMap);
 		}
+		cout << "Xij^kl variable added count = " << count << endl;
 
 
 	}
 
 	void addTransCons() {
 		
+		int nCons = 0;
 		//(l > k) X^kl_ij < T
 		for(int k = 0; k < numParts - 1; k++) {
 			vector<double> arr;
@@ -103,7 +113,7 @@ class GraphILP {
 			int nr = glp_add_rows(lp, 1); //add one for k's outgoing edges
 			glp_set_mat_row(lp, nr, arr.size() - 1, ja.data(), arr.data());
 			glp_set_row_bnds(lp, nr, GLP_UP, 0.0, TSize);
-
+			nCons++;
 		}
 		
 		//(k < l) X^kl_ij < T
@@ -122,15 +132,52 @@ class GraphILP {
 			int nr = glp_add_rows(lp, 1); //add one for k's outgoing edges
 			glp_set_mat_row(lp, nr, arr.size() - 1, ja.data(), arr.data());
 			glp_set_row_bnds(lp, nr, GLP_UP, 0.0, TSize);
+			nCons++;
 
 		}
 
+		cout << "Number of transaction constraint rows added " << nCons << endl;
+
+	}
+
+	void isValidTrans() {
+		cout << "Transaction constraints o/p, all to be less than " << TSize << "checked by asserts";
+
+		//(l > k) X^kl_ij < T
+		for(int k = 0; k < numParts - 1; k++) {
+			double count = 0;
+			for(int l = k + 1; l < numParts; l++) {
+				for(auto klMap: this->klMapVec) {
+					count += glp_mip_col_val(lp, klMap[{k, l}]);
+				}
+			}
+
+			cout << count << " ";
+			assert(count <= TSize);
+		}
+		
+		//(k < l) X^kl_ij < T
+		for(int l = 1; l < numParts; l++) {
+			double count = 0;
+			for(int k = 0; k < l; k++) {
+				for(auto klMap: this->klMapVec) {
+					count += glp_mip_col_val(lp, klMap[{k, l}]);
+				}
+			}
+
+			cout << count << " ";
+			assert(count <= TSize);
+
+		}
+
+		cout << endl;
 	}
 	//add uniqueness constraint of mapping n vertices to p partitions
 	void addUniqueCons() {
 		//numVertices * numParts coef matrix for constraints
 		int *ja = new int [1 + numParts];
 		double *arr = new double [1 + numParts];
+		int nCons = 0;
 		
 		int nr = glp_add_rows(lp, numVertices); //numVertices rows constraints
 		
@@ -143,14 +190,30 @@ class GraphILP {
 		for(int i = 0; i < numVertices; i++) {
 			for(int j = 0; j < numParts; j++) {
 				//shift by numParts * row_id + index
-				ja[j + 1] = i * numParts + j + 1;
+				ja[j + 1] = ijMap[{i, j}];
 				arr[j + 1] = 1.0;
 			}
 			glp_set_mat_row(lp, nr + i, numParts, ja, arr);
+			nCons++;
 		}
+
+		cout << "Number of uniquness constraints rows added " << nCons << endl;
 
 	}
 
+	//validate uniqueness constraints
+	void isValidUniq() {
+		cout << "Asserting uniqueness constraints " << endl;
+		for(uint32_t i = 0; i < this->graph.getNumNodes(); i++) {
+			int count = 0;
+			for(int j = 0; j < numParts; j++) {
+				if(glp_mip_col_val(lp, ijMap[{i, j}]) == 1) {
+					count++;
+				}
+			}
+			assert(count == 1);
+		}
+	}
 	void addSizeCons() {
 		int *ja = new int [1 + numVertices];
 		double *arr = new double [1 + numVertices];
@@ -230,12 +293,12 @@ class GraphILP {
 			uint32_t dest_j = it->getDestNodeID();
 
 			//first constraint sum (p < l) Xi_j^p_l = Xj_l
-			for(int l = 1; l < numParts; l++) {
+			for(int l = 0; l < numParts; l++) {
 				vector<int> ja;
 				vector<double> arr;
 				ja.push_back(0);
 				arr.push_back(0); //0th not used
-				for(int p = 0; p < l; p++) {
+				for(int p = 0; p <= l; p++) {
 					ja.push_back(klMapVec[i][{p, l}]);
 					arr.push_back(1);
 				}
@@ -244,16 +307,16 @@ class GraphILP {
 				int nr = glp_add_rows(lp, 1);
 				nCons++;
 				glp_set_mat_row(lp, nr, arr.size() - 1, ja.data(), arr.data());
-				glp_set_row_bnds(lp, nr, GLP_UP, 0.0, 0.0);
+				glp_set_row_bnds(lp, nr, GLP_FX, 0.0, 0.0);
 			}
 
 			//second constraint sum (p > k) Xi_j^k_p = Xi_k
-			for(int k = 0; k < numParts - 1; k++) {
+			for(int k = 0; k < numParts; k++) {
 				vector<int> ja;
 				vector<double> arr;
 				ja.push_back(0);
 				arr.push_back(0); //0th not used
-				for(int p = k + 1; p < numParts; p++) {
+				for(int p = k; p < numParts; p++) {
 					ja.push_back(klMapVec[i][{k, p}]);
 					arr.push_back(1);
 				}
@@ -268,37 +331,37 @@ class GraphILP {
 			i++;
 		}
 
-		cout << " Comm 2 Constraints added = " << nCons << endl;
+		cout << "Comm 2 Constraints added = " << nCons << endl;
 	}
 
 	void isValidComm2() {
 		int i = 0;
-		cout << "Comm2 constraints o/p ";	
+		cout << "Comm2 constraints o/p should all be 0, checked by asserts";	
 		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
 			uint32_t src_i = it->getSrcNodeID();
 			uint32_t dest_j = it->getDestNodeID();
 
 			//first constraint sum (p < l) Xi_j^p_l = Xj_l
-			for(int l = 1; l < numParts; l++) {
+			for(int l = 0; l < numParts; l++) {
 				int count = 0;
-				for(int p = 0; p < l; p++) {
+				for(int p = 0; p <= l; p++) {
 					count += glp_mip_col_val(lp, klMapVec[i][{p, l}]);
 				}
 				count -= glp_mip_col_val(lp, ijMap[{dest_j, l}]);
 
-				cout << count << " ";
-				//assert(count == 0);
+				//cout << count << " ";
+				assert(count == 0);
 			}
 		
 			//second constraint sum (p > k) Xi_j^k_p = Xi_k
-			for(int k = 0; k < numParts - 1; k++) {
+			for(int k = 0; k < numParts; k++) {
 				int count = 0;
-				for(int p = k + 1; p < numParts; p++) {
+				for(int p = k; p < numParts; p++) {
 					count += glp_mip_col_val(lp, klMapVec[i][{k, p}]);
 				}
 				count -= glp_mip_col_val(lp, ijMap[{src_i, k}]);
-				cout << count << " ";
-				//assert(count == 0);
+				//cout << count << " ";
+				assert(count == 0);
 			}
 
 			i++;
@@ -349,6 +412,37 @@ class GraphILP {
 
 
 		
+	}
+
+	void isValidEdgePrec() {
+		cout << "Asserting edge precedence" << endl;
+		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
+			uint32_t src = it->getSrcNodeID();
+			uint32_t dest = it->getDestNodeID();
+			//find source parrtition
+			int srcPart = -1;
+			
+			for(int j = 0; j < numParts; j++) {
+				if(glp_mip_col_val(lp, ijMap[{src, j}]) == 1) {
+					srcPart = j;
+					break;
+				}
+			}
+			assert(srcPart != -1); //mapping should be found
+
+			//find destination parrtition
+			int destPart = -1;
+			
+			for(int j = 0; j < numParts; j++) {
+				if(glp_mip_col_val(lp, ijMap[{dest, j}]) == 1) {
+					destPart = j;
+					break;
+				}
+			}
+			assert(srcPart != -1); //mapping should be found
+			assert(srcPart <= destPart); //partition of source should be less than destination
+
+		}
 	}
 	
 	void printProb() {
@@ -402,7 +496,7 @@ class GraphILP {
 		
 		cout << endl;
 
-		//int ncols = glp_get_num_cols(lp);
+		/*int ncols = glp_get_num_cols(lp);
 		cout << "Output vals of kl for each edge on newline in form part1:part2=bool present value" << endl;
 		for(auto klMap : this->klMapVec) {
 			for(int l = 0; l < numParts; l++) {
@@ -412,7 +506,7 @@ class GraphILP {
 
 			}
 			cout << endl;
-		}
+		}*/
 		
 		return (countVP == numVertices); //return success if all vertices mapped to some partition
 
@@ -450,10 +544,14 @@ int main(int argc, char **argv) {
 		gp1->addEdgePrec();
 		gp1->addCommCons2();
 		gp1->addTransCons();
-		gp1->printProb();
+		//gp1->printProb();
 		if(gp1->solve() == true) {
 			cout << "Converged at total number of partitions equal to " << gp1->getNumParts() << endl;
+			gp1->isValidUniq();
+			gp1->isValidEdgePrec();
+
 			gp1->isValidComm2();
+			gp1->isValidTrans();
 			break;
 		}
 		gp1->incParts();
