@@ -140,7 +140,7 @@ class GraphILP {
 
 	}
 
-	void isValidTrans() {
+	void ValidateTrans() {
 		cout << "Transaction constraints o/p, all to be less than " << TSize << "checked by asserts";
 
 		//(l > k) X^kl_ij < T
@@ -202,7 +202,7 @@ class GraphILP {
 	}
 
 	//validate uniqueness constraints
-	void isValidUniq() {
+	void ValidateUniq() {
 		cout << "Asserting uniqueness constraints " << endl;
 		for(uint32_t i = 0; i < this->graph.getNumNodes(); i++) {
 			int count = 0;
@@ -236,6 +236,20 @@ class GraphILP {
 
 
 
+	}
+
+	void ValidateSize() {
+		cout << "Asserting size constraints" << endl;
+		for(int i = 0; i < numParts; i++) {
+			int count = 0;
+			for(uint32_t j = 0; j < graph.getNumNodes(); j++) {
+				if(glp_mip_col_val(lp, ijMap[{j, i}]) == 1) {
+					count++; //add if vertex present in this partition
+				}
+			}
+
+			assert(count <= RSize);
+		}
 	}
 
 	void addCommCons() {
@@ -334,7 +348,7 @@ class GraphILP {
 		cout << "Comm 2 Constraints added = " << nCons << endl;
 	}
 
-	void isValidComm2() {
+	void ValidateComm2() {
 		int i = 0;
 		cout << "Comm2 constraints o/p should all be 0, checked by asserts";	
 		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
@@ -414,7 +428,7 @@ class GraphILP {
 		
 	}
 
-	void isValidEdgePrec() {
+	void ValidateEdgePrec() {
 		cout << "Asserting edge precedence" << endl;
 		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
 			uint32_t src = it->getSrcNodeID();
@@ -547,11 +561,12 @@ int main(int argc, char **argv) {
 		//gp1->printProb();
 		if(gp1->solve() == true) {
 			cout << "Converged at total number of partitions equal to " << gp1->getNumParts() << endl;
-			gp1->isValidUniq();
-			gp1->isValidEdgePrec();
+			gp1->ValidateUniq();
+			gp1->ValidateEdgePrec();
+			gp1->ValidateSize();
 
-			gp1->isValidComm2();
-			gp1->isValidTrans();
+			gp1->ValidateComm2();
+			gp1->ValidateTrans();
 			break;
 		}
 		gp1->incParts();
