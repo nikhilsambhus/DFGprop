@@ -28,7 +28,6 @@ class GraphILP {
 		cout << "Num Edges " << numEdges << " Num vertices " << numVertices << endl;
 
 		this->numParts = ceil(float(numVertices) / float(RSize)); //set initial partition size to total vertices divided by partition size
-		//numParts = 1;
 
 		this->lp = glp_create_prob();
 		glp_set_prob_name(this->lp, name.c_str()); //create lp object with name in constructor
@@ -185,6 +184,7 @@ class GraphILP {
 	void addSizeCons() {
 		int *ja = new int [1 + numVertices];
 		double *arr = new double [1 + numVertices];
+		int nCons = 0;
 
 		int nr = glp_add_rows(lp, numParts); //numParts rows constraints
 		for(int j = 0; j < numParts; j++) {
@@ -199,9 +199,10 @@ class GraphILP {
 				arr[j + 1] = 1.0;
 			}
 			glp_set_mat_row(lp, nr + i, numVertices, ja, arr);
+			nCons++;
 		}
 
-
+		cout << "Total number of capacity/size constraints " << nCons << endl;
 
 
 	}
@@ -321,6 +322,7 @@ class GraphILP {
 		int *ja = new int [1 + 2*numParts];
 		double *arr = new double [1 + 2*numVertices];
 		int nr = glp_add_rows(lp, numEdges); //numEdges rows constraints
+		int nCons = 0;
 
 		//add numEdges rows with limit to <= 0
 		int i = 0;
@@ -350,8 +352,11 @@ class GraphILP {
 			}
 
 			glp_set_mat_row(lp, nr + i, 2*numParts, ja, arr);
+			nCons++;
 			i++;
 		}
+
+		cout << "Number of precedence constraints added " << nCons << endl;
 		
 	}
 
@@ -396,11 +401,15 @@ class GraphILP {
 
 		}
 
+		cout << "Cross partition transactions: In count|Out count for each partition ";
 		//Assert cross partition counts are meet
 		for(int i = 0; i < numParts; i++) {
 			assert(inPartCounts[i] <= TSize);
+			cout << inPartCounts[i] << "|";
 			assert(outPartCounts[i] <= TSize);
+			cout << outPartCounts[i] << " ";
 		}
+		cout << endl;
 	}
 	
 	void printProb() {
@@ -470,6 +479,35 @@ class GraphILP {
 
 	}
 
+	void write_LP(char *inpName, int size, int trans_limit) {
+	/*LP/Size/InputName_parts_translimit.lp*/
+		string fd("LP/");
+		string fname = fd;
+		
+		fname = fname + to_string(size);//folder named size
+		string slash("/");
+		fname = fname + slash;
+
+		string name(inpName);//name of file
+		fname = fname + name;
+
+		string uscore("_");
+		fname = fname + uscore;
+		
+		fname = fname + to_string(numParts);
+		fname = fname + uscore;
+
+		fname = fname + to_string(trans_limit);
+		
+		string dotlp(".lp");
+		fname = fname + dotlp;
+
+		cout << fname << endl;
+		
+		glp_write_lp(lp, NULL, fname.c_str());
+
+	}
+
 };
 
 /*Arguments required 
@@ -483,13 +521,17 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 	DAG gp;
+
+	char *inpName = argv[1];
 	try {
-		gp = DAG(argv[1]);
+		gp = DAG(inpName);
 	} catch(string ex) {
 		cout << ex << endl;
 	}
 	
-	GraphILP *gp1 = new GraphILP("basic", gp, atoi(argv[2]), atoi(argv[3]));
+	int size = atoi(argv[2]);
+	int trans_limit = atoi(argv[3]);
+	GraphILP *gp1 = new GraphILP("basic", gp, size, trans_limit);
 
 	
 	int iterations = 10;
@@ -499,17 +541,18 @@ int main(int argc, char **argv) {
 		gp1->addColVars();
 		gp1->addUniqueCons();
 		gp1->addSizeCons();
-		gp1->addEdgePrec();
+		//gp1->addEdgePrec();
 		gp1->addCommCons2();
 		gp1->addTransCons();
+		gp1->write_LP(inpName, size, trans_limit); break;
 		//gp1->printProb();
-		if(gp1->solve() == true) {
+		/*if(gp1->solve() == true) {
 			cout << "Converged at total number of partitions equal to " << gp1->getNumParts() << endl;
 			gp1->ValidateUniq();
 			gp1->ValidateSize();
 			gp1->ValidatePrecTrans();
 			break;
-		}
+		}*/
 		gp1->incParts();
 		iterations--;
 	}
