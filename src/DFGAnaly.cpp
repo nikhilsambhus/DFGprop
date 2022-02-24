@@ -45,6 +45,7 @@ uint32_t DFGAnaly::assignTime(vector<uint32_t> &topOrder, vector<int32_t> &timeS
 	}
 
 	int32_t timeMax = 0;
+	int count_load_1 = 0;
 	for(uint32_t n : topOrder) {
 		//cout << n << " ";
 		list<Node> preds;
@@ -83,12 +84,16 @@ uint32_t DFGAnaly::assignTime(vector<uint32_t> &topOrder, vector<int32_t> &timeS
 			timeSt[n] = max + 1;//nodeWts[label];
 		}*/
 		timeSt[n] = max + 1;
+		if(timeSt[n] == 1 && label.find("load") != std::string::npos) {
+			count_load_1++;
+		}
 
 		if(timeMax < timeSt[n]) {
 			timeMax = timeSt[n];
 		}
 	}
 
+	cout << count_load_1 << " loads at timestamp 1 " << endl;
 	return timeMax;
 }
 double DFGAnaly::getParallelism() {
@@ -114,6 +119,10 @@ uint32_t DFGAnaly::criticalPathLen() {
 	vector<uint32_t> topOrder = topoSort();
 	vector<int32_t> timeSt; 
 	uint32_t timeMax = assignTime(topOrder, timeSt);
+	for(int i = 0; i <= timeMax; i++) {
+		cout << " Node level " << i << " has count " << count(timeSt.begin(), timeSt.end(), i)  << " " ;
+	}
+	cout << endl;
 	return timeMax;
 }
 

@@ -24,9 +24,10 @@ int main(int argc, char **argv) {
 
 		int cgra_size = atoi(argv[2]);
 		int percentage = atoi(argv[3]);
-		float routing_size = percentage/100 * cgra_size;
+		float routing_size = percentage/100.0 * cgra_size;
 
 		int map_size = cgra_size - routing_size;
+		cout << "Applicable Map size " << map_size << endl;
 		dfgP.partitionDFGVar(map_size);
 	}catch(string er) {
 		cout << er << endl;

@@ -107,7 +107,7 @@ int DFGPart::partitionDFGnP(int npart, int map_size) {
 }
 
 void DFGPart::partitionDFGVar(int map_size) {
-	for(int nparts = 2; nparts <= 4; nparts++) {
+	for(int nparts = 2; nparts <= 10; nparts++) {
 		cout << "Trying with " << nparts << endl;
 		if(partitionDFGnP(nparts, map_size)) {
 			cout << "Success\n" << endl;
