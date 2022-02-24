@@ -20,3 +20,6 @@ Normalize.out : ${SRC}/Normalize.cpp ${INC}/DFGUtils.h ${GR_LIB}
 
 ilp1.o : ${SRC}/ilp1.cpp ${INC}/* ${GR_LIB}
 	${CC} -std=c++11 ${SRC}/ilp1.cpp -I ${INC} ${GR_LIB} -o ilp1.o
+
+dotconv1.o : dotconv1.cpp ${INC}/* ${GR_LIB}
+	${CC} -std=c++11 dotconv1.cpp -I ${INC} ${GR_LIB} -o dotconv1.o

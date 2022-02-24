@@ -1,5 +1,4 @@
 digraph write_bmp_header_dfg__7 {
-    node [fontcolor=white,style=filled,color=blue2];
     MUL_3 [label = MUL ];
     ADD_4 [label = ADD ];
     ADD_8 [label = ADD ];
