@@ -304,7 +304,7 @@ int main (int argc, char **argv)
 
 	auto start = chrono::high_resolution_clock::now();
 	int numParts = ceil(float(gp.getNumNodes()) / float(size)); //set initial partition size to total vertices divided by partition size
-	for(int i = 1; i <= 10; i++) {
+	for(int i = 1; i <= iterations; i++) {
 		PartitionILP *gp1 = new PartitionILP(gp, size, trans_limit, numParts);
 		gp1->addColVars();//set objective function; define all vars
 		gp1->addUniqueCons();
