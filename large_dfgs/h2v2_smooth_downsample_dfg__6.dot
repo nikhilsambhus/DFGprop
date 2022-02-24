@@ -1,5 +1,4 @@
 digraph h2v2_smooth_downsample_dfg__6 {
-    node [fontcolor=white,style=filled,color=blue2];
     LOD_1 [label = LOD ];
     ADD_7 [label = ADD ];
     LOD_8 [label = LOD ];
