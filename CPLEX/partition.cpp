@@ -27,6 +27,10 @@ class PartitionILP {
 	int numVertices;
 	int numEdges;
 	int numParts;
+	int loadWeight = 10;
+	vector<pair<int, int>> loadPairs;
+	//for each pair, there are {k,l} pair mappings
+	vector<map<pair<int, int>, IloBoolVar>> loadPairMap;
 	map<pair<int, int>, IloBoolVar> ijMap; //map of ij values
 	vector<map<pair<int, int>, IloBoolVar>> klMapVec;//map of kl values for cross partition edges
 	public:
@@ -82,10 +86,80 @@ class PartitionILP {
 		}
 		
 		cout << "Xij^kl variable added count = " << count << endl;
-		
+
+
+		int ldCount = 0;
+		vector<int> loadVec;
+		for(list<Node>::iterator it = graph.nodeBegin(); it != graph.nodeEnd(); it++) {
+			string str = it->getLabel();
+			if(str.find("load") != string::npos) {
+				loadVec.push_back(it->getID());
+				ldCount++;
+			}
+		}
+		cout << "Load count " << ldCount << endl;
+		//make pairs of all loads
+		int pCount = 0;
+		for(int i = 0; i < loadVec.size(); i++) {
+			for(int j = i + 1; j < loadVec.size(); j++) {
+				pair<int, int> pr;
+				pr.first = loadVec[i];
+				pr.second = loadVec[j];
+				loadPairs.push_back(pr);
+				pCount++;
+			}
+		}
+		cout << "Pair count " << pCount << endl;
+	
+		//for each pair add k * l partitions in which each pair can be
+		for(int i = 0; i < loadPairs.size(); i++) {
+			map<pair<int, int>, IloBoolVar> klMap;
+			for(int k = 0; k < numParts; k++) {
+				for(int l = 0; l < numParts; l++) {
+					klMap[{k ,l}] = IloBoolVar(env);
+					varPtr->add(klMap[{k, l}]);
+					if(k == l) {
+						objective.setLinearCoef(klMap[{k, l}], 0); //if in same partition, add 0 as coef
+					}
+					else {
+						objective.setLinearCoef(klMap[{k, l}], loadWeight);//if loads in diffferent part, add weight
+					}
+				}
+			}
+			loadPairMap.push_back(klMap);
+		}
 		modelPtr->add(objective);
 	}
+	
+	void addLoadReuseCons() {
+		int nCons = 0;
+		//for each pair add k * l partitions in which each pair can be
 
+		for(int i = 0; i < loadPairs.size(); i++) {
+			map<pair<int, int>, IloBoolVar> klMap = loadPairMap[i];
+			for(int k = 0; k < numParts; k++) {
+				for(int l = 0; l < numParts; l++) {
+					IloRange range1 = IloRange(env, -IloInfinity, 1);
+					IloRange range2 = IloRange(env, -IloInfinity, 0);
+					
+					//Xi_k + Xj_l - yi_j^k_l
+					range1.setLinearCoef(ijMap[{loadPairs[i].first, k}], 1);  
+					range1.setLinearCoef(ijMap[{loadPairs[i].second, l}], 1);
+					range1.setLinearCoef(klMap[{k, l}], -1);
+					modelPtr->add(range1);
+
+					//-Xi_k - Xj_l + 2*Yi_j^k_l
+					range2.setLinearCoef(ijMap[{loadPairs[i].first, k}], -1);
+					range2.setLinearCoef(ijMap[{loadPairs[i].second, l}], -1);
+					range2.setLinearCoef(klMap[{k, l }], 2);
+					modelPtr->add(range2);
+					nCons += 2;
+				}
+			}
+		}
+		cout << "Load Reuse constraints added = " << nCons << endl;
+
+	}
 	//add uniqueness constraint of mapping n vertices to p partitions
 	void addUniqueCons() {
 		int nCons = 0;
@@ -107,8 +181,10 @@ class PartitionILP {
 			for(int j = 0; j < numVertices; j++) {
 				range.setLinearCoef(ijMap[{j, i}], 1);
 			}
+			nCons++;
 			modelPtr->add(range);
 		}
+		cout << "Number of size constraint rows " << nCons << endl;
 	}
 
 	void addCommCons() {
@@ -300,7 +376,7 @@ int main (int argc, char **argv)
 
 	int size = atoi(argv[2]);
 	int trans_limit = atoi(argv[3]);
-	int iterations = 10;
+	int iterations = 100;
 
 	auto start = chrono::high_resolution_clock::now();
 	int numParts = ceil(float(gp.getNumNodes()) / float(size)); //set initial partition size to total vertices divided by partition size
@@ -311,6 +387,7 @@ int main (int argc, char **argv)
 		gp1->addSizeCons();
 		gp1->addCommCons();
 		gp1->addTransCons();
+		//gp1->addLoadReuseCons();
 		if(gp1->solve() == true) {
 			gp1->ValidateSoln();
 			cout << "Solution found in iteration number " << i << " with partitions " << numParts << endl;
