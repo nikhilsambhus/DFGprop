@@ -80,7 +80,11 @@ void convertDOT(string dfInFile, string dfOutFile) {
 		else {
 			readNode = false;
 			if (s == "->") readEdge = true;
-			else {
+			else if(s.find("[fontcolor") != string::npos) { //found fontcolor tag, skip this line
+				//cout << "Skipping fontcolor attribute " << endl;
+				getline(dfIn, line);
+				continue;
+			} else {
 				readEdge = false;
 				throw (string("fromDOT: syntax error, expected a node or an edge"));
 			}
