@@ -28,10 +28,10 @@ class PartitionILP {
 	int numEdges;
 	int numParts;
 	int loadWeight = 10;
-	vector<pair<int, int>> loadPairs;
 	//for each pair, there are {k,l} pair mappings
-	vector<map<pair<int, int>, IloBoolVar>> loadPairMap;
 	map<pair<int, int>, IloBoolVar> ijMap; //map of ij values
+	map<pair<int, int>, IloBoolVar> WipMap; //map of wip values
+	map<pair<int, int>, IloBoolVar> YipMap; //map of yip values
 	vector<map<pair<int, int>, IloBoolVar>> klMapVec;//map of kl values for cross partition edges
 	public:
 	PartitionILP(DAG gp, int rsize, int tsize, int nPts) {
@@ -65,7 +65,17 @@ class PartitionILP {
 		}
 		cout << "Xij variable added count = " << count << endl;
 
-		this->klMapVec.clear();
+		for(int i = 0; i < numVertices; i++) {
+			for(int j = 0; j < numParts - 1; j++) {
+				YipMap[{i, j}] = IloBoolVar(env);
+				WipMap[{i, j}] = IloBoolVar(env);
+				varPtr->add(YipMap[{i, j}]);
+				varPtr->add(WipMap[{i, j}]);
+				objective.setLinearCoef(WipMap[{i, j}], 1);
+			}
+		}
+
+		/*this->klMapVec.clear();
 		count = 0;
 		//add columns for each edge (parts * parts) for communication objective function
 		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
@@ -86,80 +96,11 @@ class PartitionILP {
 		}
 		
 		cout << "Xij^kl variable added count = " << count << endl;
+		*/
 
 
-		int ldCount = 0;
-		vector<int> loadVec;
-		for(list<Node>::iterator it = graph.nodeBegin(); it != graph.nodeEnd(); it++) {
-			string str = it->getLabel();
-			if(str.find("load") != string::npos) {
-				loadVec.push_back(it->getID());
-				ldCount++;
-			}
-		}
-		cout << "Load count " << ldCount << endl;
-		//make pairs of all loads
-		int pCount = 0;
-		for(int i = 0; i < loadVec.size(); i++) {
-			for(int j = i + 1; j < loadVec.size(); j++) {
-				pair<int, int> pr;
-				pr.first = loadVec[i];
-				pr.second = loadVec[j];
-				loadPairs.push_back(pr);
-				pCount++;
-			}
-		}
-		cout << "Pair count " << pCount << endl;
-	
-		//for each pair add k * l partitions in which each pair can be
-		for(int i = 0; i < loadPairs.size(); i++) {
-			map<pair<int, int>, IloBoolVar> klMap;
-			for(int k = 0; k < numParts; k++) {
-				for(int l = 0; l < numParts; l++) {
-					klMap[{k ,l}] = IloBoolVar(env);
-					varPtr->add(klMap[{k, l}]);
-					if(k == l) {
-						objective.setLinearCoef(klMap[{k, l}], 0); //if in same partition, add 0 as coef
-					}
-					else {
-						objective.setLinearCoef(klMap[{k, l}], loadWeight);//if loads in diffferent part, add weight
-					}
-				}
-			}
-			loadPairMap.push_back(klMap);
-		}
-		modelPtr->add(objective);
 	}
 	
-	void addLoadReuseCons() {
-		int nCons = 0;
-		//for each pair add k * l partitions in which each pair can be
-
-		for(int i = 0; i < loadPairs.size(); i++) {
-			map<pair<int, int>, IloBoolVar> klMap = loadPairMap[i];
-			for(int k = 0; k < numParts; k++) {
-				for(int l = 0; l < numParts; l++) {
-					IloRange range1 = IloRange(env, -IloInfinity, 1);
-					IloRange range2 = IloRange(env, -IloInfinity, 0);
-					
-					//Xi_k + Xj_l - yi_j^k_l
-					range1.setLinearCoef(ijMap[{loadPairs[i].first, k}], 1);  
-					range1.setLinearCoef(ijMap[{loadPairs[i].second, l}], 1);
-					range1.setLinearCoef(klMap[{k, l}], -1);
-					modelPtr->add(range1);
-
-					//-Xi_k - Xj_l + 2*Yi_j^k_l
-					range2.setLinearCoef(ijMap[{loadPairs[i].first, k}], -1);
-					range2.setLinearCoef(ijMap[{loadPairs[i].second, l}], -1);
-					range2.setLinearCoef(klMap[{k, l }], 2);
-					modelPtr->add(range2);
-					nCons += 2;
-				}
-			}
-		}
-		cout << "Load Reuse constraints added = " << nCons << endl;
-
-	}
 	//add uniqueness constraint of mapping n vertices to p partitions
 	void addUniqueCons() {
 		int nCons = 0;
@@ -185,6 +126,75 @@ class PartitionILP {
 			modelPtr->add(range);
 		}
 		cout << "Number of size constraint rows " << nCons << endl;
+	}
+
+	void addEdgePrec() {
+		int nCons = 0;
+		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
+			uint32_t src_i = it->getSrcNodeID();
+			uint32_t dest_j = it->getDestNodeID();
+			IloRange range = IloRange(env, -IloInfinity, 0);
+
+			//sum of sources
+			for(int i = 0; i < numParts; i++) {
+				range.setLinearCoef(ijMap[{src_i, i}], i);			
+			}
+
+			//sum of dests
+			for(int j = 0; j < numParts; j++) {
+				range.setLinearCoef(ijMap[{dest_j, j}], -j);
+			}
+
+			modelPtr->add(range);
+
+		}
+	}
+
+	void addWriteCons() {
+		int nCons = 0;
+		for(list<Node>::iterator it = graph.nodeBegin(); it != graph.nodeEnd(); it++) {
+			uint32_t i_v = it->getID();
+			for(int p = 0; p < numParts - 1; p++) {
+				IloRange range1 = IloRange(env, -IloInfinity, 0);
+				IloRange range2 = IloRange(env, -IloInfinity, 0);
+				nCons += 2;
+				//sum over all successors of this node
+				list<Node> succ;
+				graph.getSuccessors(i_v, succ);
+				for(auto j_v : succ) {
+					for(int l = p + 1; l < numParts; l++) {
+						range1.setLinearCoef(ijMap[{i_v, l}], -1);
+						range2.setLinearCoef(ijMap[{i_v, l}], 1);
+					}
+				}
+				range1.setLinearCoef(YipMap[{i_v, p}], 1);
+				range2.setLinearCoef(YipMap[{i_v, p}], -succ.size());
+				modelPtr->add(range1);
+				modelPtr->add(range2);
+			}
+		}
+
+		cout << "Total first set of write constraints " << nCons << endl;
+		
+		nCons = 0;
+		for(list<Node>::iterator it = graph.nodeBegin(); it != graph.nodeEnd(); it++) {
+			int i_v = it->getID();
+			for(int p = 0; p < numParts - 1; p++) {
+				IloRange range1 = IloRange(env, -IloInfinity, 1);
+				IloRange range2 = IloRange(env, -IloInfinity, 0);
+				nCons += 2;
+
+				range1.setLinearCoef(ijMap[{i_v, p}], 1);
+				range1.setLinearCoef(YipMap[{i_v, p}], 1);
+				range1.setLinearCoef(WipMap[{i_v, p}], -1);
+				
+				range2.setLinearCoef(ijMap[{i_v, p}], -1);
+				range2.setLinearCoef(YipMap[{i_v, p}], -1);
+				range2.setLinearCoef(WipMap[{i_v, p}], -2);
+			}
+		}
+		
+		cout << "Total second set of write constraints " << nCons << endl;
 	}
 
 	void addCommCons() {
@@ -385,14 +395,16 @@ int main (int argc, char **argv)
 		gp1->addColVars();//set objective function; define all vars
 		gp1->addUniqueCons();
 		gp1->addSizeCons();
-		gp1->addCommCons();
-		gp1->addTransCons();
-		//gp1->addLoadReuseCons();
+		gp1->addEdgePrec();
+		gp1->addWriteCons();
+		//gp1->addCommCons();
+		//gp1->addTransCons();
 		if(gp1->solve() == true) {
 			gp1->ValidateSoln();
 			cout << "Solution found in iteration number " << i << " with partitions " << numParts << endl;
 			break;
 		}
+		break;
 		numParts++;
 		delete gp1;
 	}
