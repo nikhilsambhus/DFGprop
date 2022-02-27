@@ -161,10 +161,11 @@ class PartitionILP {
 				//sum over all successors of this node
 				list<Node> succ;
 				graph.getSuccessors(i_v, succ);
-				for(auto j_v : succ) {
+				for(auto nd : succ) {
+					uint32_t j_v = nd.getID();
 					for(int l = p + 1; l < numParts; l++) {
-						range1.setLinearCoef(ijMap[{i_v, l}], -1);
-						range2.setLinearCoef(ijMap[{i_v, l}], 1);
+						range1.setLinearCoef(ijMap[{j_v, l}], -1);
+						range2.setLinearCoef(ijMap[{j_v, l}], 1);
 					}
 				}
 				range1.setLinearCoef(YipMap[{i_v, p}], 1);
@@ -190,7 +191,7 @@ class PartitionILP {
 				
 				range2.setLinearCoef(ijMap[{i_v, p}], -1);
 				range2.setLinearCoef(YipMap[{i_v, p}], -1);
-				range2.setLinearCoef(WipMap[{i_v, p}], -2);
+				range2.setLinearCoef(WipMap[{i_v, p}], 2);
 			}
 		}
 		
