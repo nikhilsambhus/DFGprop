@@ -170,6 +170,7 @@ class PartitionILP {
 				}
 				range1.setLinearCoef(YipMap[{i_v, p}], 1);
 				range2.setLinearCoef(YipMap[{i_v, p}], -succ.size());
+
 				modelPtr->add(range1);
 				modelPtr->add(range2);
 			}
@@ -192,6 +193,9 @@ class PartitionILP {
 				range2.setLinearCoef(ijMap[{i_v, p}], -1);
 				range2.setLinearCoef(YipMap[{i_v, p}], -1);
 				range2.setLinearCoef(WipMap[{i_v, p}], 2);
+
+				modelPtr->add(range1);
+				modelPtr->add(range2);
 			}
 		}
 		
