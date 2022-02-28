@@ -64,16 +64,19 @@ class PartitionILP {
 			}
 		}
 		cout << "Xij variable added count = " << count << endl;
-
+		
+		count = 0;
 		for(int i = 0; i < numVertices; i++) {
 			for(int j = 0; j < numParts - 1; j++) {
 				YipMap[{i, j}] = IloBoolVar(env);
 				WipMap[{i, j}] = IloBoolVar(env);
 				varPtr->add(YipMap[{i, j}]);
 				varPtr->add(WipMap[{i, j}]);
+				count += 2;
 				objective.setLinearCoef(WipMap[{i, j}], 1);
 			}
 		}
+		cout << "Y and W variables added count = " << count << endl;
 
 		/*this->klMapVec.clear();
 		count = 0;
@@ -97,7 +100,7 @@ class PartitionILP {
 		
 		cout << "Xij^kl variable added count = " << count << endl;
 		*/
-
+		modelPtr->add(objective);
 
 	}
 	
@@ -157,49 +160,53 @@ class PartitionILP {
 			for(int p = 0; p < numParts - 1; p++) {
 				IloRange range1 = IloRange(env, -IloInfinity, 0);
 				IloRange range2 = IloRange(env, -IloInfinity, 0);
-				nCons += 2;
 				//sum over all successors of this node
 				list<Node> succ;
 				graph.getSuccessors(i_v, succ);
+				if(succ.size() == 0) {
+					//just set yip and wip to 0 and continue
+					IloRange y1 = IloRange(env, 0, 0);
+					IloRange w1 = IloRange(env, 0, 0);
+					y1.setLinearCoef(YipMap[{i_v, p}], 1);
+					w1.setLinearCoef(WipMap[{i_v, p}], 1);
+					modelPtr->add(y1);
+					modelPtr->add(w1);
+					continue;
+				}
 				for(auto nd : succ) {
 					uint32_t j_v = nd.getID();
-					for(int l = p + 1; l < numParts; l++) {
+					for(int l = p + 1; l < numParts; l++) { 
 						range1.setLinearCoef(ijMap[{j_v, l}], -1);
 						range2.setLinearCoef(ijMap[{j_v, l}], 1);
 					}
 				}
 				range1.setLinearCoef(YipMap[{i_v, p}], 1);
-				range2.setLinearCoef(YipMap[{i_v, p}], -succ.size());
+				range2.setLinearCoef(YipMap[{i_v, p}], -1 * (int)succ.size());
 
 				modelPtr->add(range1);
 				modelPtr->add(range2);
-			}
-		}
-
-		cout << "Total first set of write constraints " << nCons << endl;
-		
-		nCons = 0;
-		for(list<Node>::iterator it = graph.nodeBegin(); it != graph.nodeEnd(); it++) {
-			int i_v = it->getID();
-			for(int p = 0; p < numParts - 1; p++) {
-				IloRange range1 = IloRange(env, -IloInfinity, 1);
-				IloRange range2 = IloRange(env, -IloInfinity, 0);
+				
+				IloRange range3 = IloRange(env, -IloInfinity, 1);
+				IloRange range4 = IloRange(env, -IloInfinity, 0);
 				nCons += 2;
 
-				range1.setLinearCoef(ijMap[{i_v, p}], 1);
-				range1.setLinearCoef(YipMap[{i_v, p}], 1);
-				range1.setLinearCoef(WipMap[{i_v, p}], -1);
+				range3.setLinearCoef(ijMap[{i_v, p}], 1);
+				range3.setLinearCoef(YipMap[{i_v, p}], 1);
+				range3.setLinearCoef(WipMap[{i_v, p}], -1);
 				
-				range2.setLinearCoef(ijMap[{i_v, p}], -1);
-				range2.setLinearCoef(YipMap[{i_v, p}], -1);
-				range2.setLinearCoef(WipMap[{i_v, p}], 2);
+				range4.setLinearCoef(ijMap[{i_v, p}], -1);
+				range4.setLinearCoef(YipMap[{i_v, p}], -1);
+				range4.setLinearCoef(WipMap[{i_v, p}], 2);
 
-				modelPtr->add(range1);
-				modelPtr->add(range2);
+				modelPtr->add(range3);
+				modelPtr->add(range4);
+
+				nCons += 2;
 			}
 		}
-		
-		cout << "Total second set of write constraints " << nCons << endl;
+
+		cout << "Total set of write constraints " << nCons << endl;
+
 	}
 
 	void addCommCons() {
@@ -271,26 +278,32 @@ class PartitionILP {
 	}
 
 	bool solve() {
-		cplexPtr->extract(*modelPtr);
-		if(!cplexPtr->solve()) {
-			cout << "Failed to optimize" << endl;
-			return false;	
-		}
-
-		cout << "Status value = " << cplexPtr->getStatus() << endl;
-		cout << "Objective function value = " << cplexPtr->getObjValue() << endl;
-		//IloNumArray vals(env);
-		//cplexPtr->getValues(vals, *varPtr);
-		//cout << "Solution vector = " << vals << endl; 
 		int countMaps = 0;
-		for(int i = 0; i < numVertices; i++) {
-			for(int j = 0; j < numParts; j++) {
-				if(cplexPtr->getValue(ijMap[{i, j}])) {
-					countMaps++;
+		try {
+			cplexPtr->extract(*modelPtr);
+			cplexPtr->exportModel("test.lp");
+			if(!cplexPtr->solve()) {
+				cout << "Failed to optimize" << endl;
+				return false;	
+			}
+
+			cout << "Status value = " << cplexPtr->getStatus() << endl;
+			cout << "Objective function value = " << cplexPtr->getObjValue() << endl;
+			/*IloNumArray vals(env);
+			cplexPtr->getValues(vals, *varPtr);
+			cout << "Solution vector = " << vals << endl; */
+			for(int i = 0; i < numVertices; i++) {
+				for(int j = 0; j < numParts; j++) {
+					if(cplexPtr->getValue(ijMap[{i, j}])) {
+						countMaps++;
+						//cout << "Node " << i << " is mapped to " << j << endl;
+					}
 				}
 			}
 		}
-
+		catch (IloException ex) {
+			cout << ex << endl;
+		}
 		return (countMaps == numVertices); //return true if 1-1 mapping done
 	}
 
