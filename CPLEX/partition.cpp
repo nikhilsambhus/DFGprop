@@ -355,12 +355,12 @@ class PartitionILP {
 		for(int i = 0; i < numVertices; i++) {
 			int count = 0;
 			for(int j = 0; j < numParts; j++) {
-                double val = cplexPtr->getValue(ijMap[{i, j}]);
-                if (compareEqual(val, 1) == true) {
-                    count++;
-                }
-            }
-			assert(count == 1); //only one vexter needs to be mapped to some partition
+				double val = cplexPtr->getValue(ijMap[{i, j}]);
+				if (compareEqual(val, 1) == true) {
+					count++;
+				}
+			}
+			assert(count == 1); //only one vertex needs to be mapped to some partition
 		}
 
 		cout << "Asserting size constraints" << endl;
@@ -411,8 +411,10 @@ class PartitionILP {
 		cout << "Asserting Wips and trans limits " << endl;
 		
 		map<int, int> writeCount; //for each partition
+		map<int, int> outEdgesCount;
 		for(int i = 0; i < numParts; i++) {
 			writeCount[i] = 0;
+			outEdgesCount[i] = 0;
 		}
 		for(int v = 0; v < numVertices; v++) {
 			for(int p = 0; p < numParts - 1; p++) {
@@ -422,25 +424,24 @@ class PartitionILP {
 					list<Node> succ;
 					graph.getSuccessors(v, succ);
 					//check if any successor mapped to partition greater than p
-					//check successors of v where they are mapped
 					bool someNodeMap = false;
 					for(auto nd : succ) {
 						int j = nd.getID();
-						bool isNodeMap = false;
+						bool isNodeMap = false; //is j mapped to any of subsequent partitions
 						for(int l = p + 1; l < numParts; l++) {
+						//check successors of v where they are mapped
 							double val = cplexPtr->getValue(ijMap[{j, l}]);
 							if(compareEqual(val, 1)) {
 								isNodeMap = true;
-								break;
+								outEdgesCount[p] = outEdgesCount[p] + 1; //increment for each edge with dest vertex in subsequent partitions
 							}
 						}
 						if(isNodeMap == true) {
 							someNodeMap = true;
-							break;
 						}
 					}
 					
-					//if some succ node is mapped to next partition 
+					//if some succ node is mapped to subsequent partitions 
 					if(someNodeMap == true) {
 						double val = cplexPtr->getValue(WipMap[{v, p}]);
 						assert(compareEqual(val, 1) == true);
@@ -465,6 +466,14 @@ class PartitionILP {
 			cout << writeCount[i] << " ";
 			assert(writeCount[i] <= TSize);
 		}
+		cout << endl;
+
+		//print out edges count
+		cout << "Out Edges counts ";
+		for(int i = 0; i < numParts; i++) {
+			cout << outEdgesCount[i] << " ";
+		}
+
 		cout << endl;
 	}
 };
