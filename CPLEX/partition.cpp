@@ -57,7 +57,11 @@ class PartitionILP {
 		int count = 0;
 		for(int i = 0; i < numVertices; i++) {
 			for(int j = 0; j < numParts; j++) {
-				ijMap[{i, j}] = IloBoolVar(env);
+				string name = "x";
+				name = name + to_string(i);
+				name = name + ",";
+				name = name + to_string(j);
+				ijMap[{i, j}] = IloBoolVar(env, name.c_str());
 				varPtr->add(ijMap[{i, j}]);
 				objective.setLinearCoef(ijMap[{i, j}], 0);
 				count++;
@@ -68,8 +72,20 @@ class PartitionILP {
 		count = 0;
 		for(int i = 0; i < numVertices; i++) {
 			for(int j = 0; j < numParts - 1; j++) {
-				YipMap[{i, j}] = IloBoolVar(env);
-				WipMap[{i, j}] = IloBoolVar(env);
+				string yname = "y";
+				yname = yname + to_string(i);
+				yname = yname + ",";
+				yname = yname + to_string(j);
+
+				YipMap[{i, j}] = IloBoolVar(env, yname.c_str());
+
+				string wname = "w";
+				wname = wname + to_string(i);
+				wname = wname + ",";
+				wname = wname + to_string(j);
+
+				WipMap[{i, j}] = IloBoolVar(env, wname.c_str());
+
 				varPtr->add(YipMap[{i, j}]);
 				varPtr->add(WipMap[{i, j}]);
 				count += 2;
@@ -296,7 +312,7 @@ class PartitionILP {
 		int countMaps = 0;
 		try {
 			cplexPtr->extract(*modelPtr);
-			//cplexPtr->exportModel("test.lp");
+			cplexPtr->exportModel("test.lp");
 			if(!cplexPtr->solve()) {
 				cout << "Failed to optimize" << endl;
 				return false;	
@@ -307,34 +323,49 @@ class PartitionILP {
 			cout << "Number of rows = " << cplexPtr->getNrows() << endl;
 			cout << "Number of cols = " << cplexPtr->getNcols() << endl;
 
-			/*IloNumArray vals(env);
+			IloNumArray vals(env);
 			cplexPtr->getValues(vals, *varPtr);
-			cout << "Solution vector = " << vals << endl; */
-			for(int i = 0; i < numVertices; i++) {
+			//cout << "Solution vector = " << vals << endl; 
+			/*for(int i = 0; i < numVertices; i++) {
 				for(int j = 0; j < numParts; j++) {
 					if(cplexPtr->getValue(ijMap[{i, j}])) {
 						countMaps++;
-						//cout << "Node " << i << " is mapped to " << j << endl;
+						cout << "Node " << i << " is mapped to " << j << endl;
 					}
 				}
-			}
+			}*/
 		}
 		catch (IloException ex) {
 			cout << ex << endl;
 		}
-		return (countMaps == numVertices); //return true if 1-1 mapping done
+		//return (countMaps == numVertices); //return true if 1-1 mapping done
+		return true;
 	}
 
+	
+	bool compareEqual(double val1, double val2) {
+		if(fabs(val1 - val2) < 1e-5) {
+			return true;
+		}
+		return false;
+	}
 	void ValidateSoln() {
 		cout << "Asserting uniqueness constraints" << endl;
 		//Check if vertex mapped to only one partition
 		for(int i = 0; i < numVertices; i++) {
 			int count = 0;
 			for(int j = 0; j < numParts; j++) {
-				if(cplexPtr->getValue(ijMap[{i, j}]) == 1) {
+				double val = cplexPtr->getValue(ijMap[{i, j}]);
+				if(compareEqual(val, 1) == true) {
 					count++;
 				}
 			}
+			/*if(count != 1) {
+				cout << "Vertex " << i << " is mapped to these many parts " << count << endl;
+				for(int j = 0; j < numParts; j++) {
+					cout << i << " " << j << " pos is " << cplexPtr->getValue(ijMap[{i, j}]) << " ";
+				}
+			}*/
 			assert(count == 1); //only one vexter needs to be mapped to some partition
 		}
 
@@ -342,7 +373,8 @@ class PartitionILP {
 		for(int i = 0; i < numParts; i++) {
 			int count = 0;
 			for(uint32_t j = 0; j < graph.getNumNodes(); j++) {
-				if(cplexPtr->getValue(ijMap[{j, i}]) == 1) {
+				double val = cplexPtr->getValue(ijMap[{j, i}]);
+				if(compareEqual(val, 1)) {
 					count++; //add if vertex present in this partition
 				}
 			}
@@ -358,7 +390,8 @@ class PartitionILP {
 			int srcPart = -1;
 
 			for(int j = 0; j < numParts; j++) {
-				if(cplexPtr->getValue(ijMap[{src, j}]) == 1) {
+				double val = cplexPtr->getValue(ijMap[{src, j}]);
+				if(compareEqual(val, 1)) {
 					srcPart = j;
 					break;
 				}
@@ -369,7 +402,8 @@ class PartitionILP {
 			int destPart = -1;
 
 			for(int j = 0; j < numParts; j++) {
-				if(cplexPtr->getValue(ijMap[{dest, j}]) == 1) {
+				double val = cplexPtr->getValue(ijMap[{dest, j}]);
+				if(compareEqual(val, 1)) {
 					destPart = j;
 					break;
 				}
@@ -399,7 +433,8 @@ class PartitionILP {
 						int j = nd.getID();
 						bool isNodeMap = false;
 						for(int l = p + 1; l < numParts; l++) {
-							if(cplexPtr->getValue(ijMap[{j ,l}]) == 1) {
+							double val = cplexPtr->getValue(ijMap[{j, l}]);
+							if(compareEqual(val, 1)) {
 								isNodeMap = true;
 								break;
 							}
@@ -412,15 +447,18 @@ class PartitionILP {
 					
 					//if some succ node is mapped to next partition 
 					if(someNodeMap == true) {
-						assert(cplexPtr->getValue(WipMap[{v, p}]) == 1);
+						double val = cplexPtr->getValue(WipMap[{v, p}]);
+						assert(compareEqual(val, 1) == true);
 						//inc count of base node writes
 						writeCount[p] = writeCount[p] + 1;
 					}else {
-						assert(cplexPtr->getValue(WipMap[{v, p}]) == 0);
+						double val = cplexPtr->getValue(WipMap[{v, p}]);
+						assert(compareEqual(val, 0) == true);
 					}
 				}
 				else { //if v is not in p them Wvp must be 0
-					assert(cplexPtr->getValue(WipMap[{v, p}]) == 0);
+					double val = cplexPtr->getValue(WipMap[{v, p}]);
+					assert(compareEqual(val, 0) == true);
 				}
 			}
 		}
