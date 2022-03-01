@@ -355,17 +355,11 @@ class PartitionILP {
 		for(int i = 0; i < numVertices; i++) {
 			int count = 0;
 			for(int j = 0; j < numParts; j++) {
-				double val = cplexPtr->getValue(ijMap[{i, j}]);
-				if(compareEqual(val, 1) == true) {
-					count++;
-				}
-			}
-			/*if(count != 1) {
-				cout << "Vertex " << i << " is mapped to these many parts " << count << endl;
-				for(int j = 0; j < numParts; j++) {
-					cout << i << " " << j << " pos is " << cplexPtr->getValue(ijMap[{i, j}]) << " ";
-				}
-			}*/
+                double val = cplexPtr->getValue(ijMap[{i, j}]);
+                if (compareEqual(val, 1) == true) {
+                    count++;
+                }
+            }
 			assert(count == 1); //only one vexter needs to be mapped to some partition
 		}
 
