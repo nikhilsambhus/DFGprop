@@ -21,7 +21,7 @@ CCC = g++
 # Compiler options 
 # ---------------------------------------------------------------------
 
-CCOPT = -m64 -fPIC -fno-strict-aliasing -fexceptions -DNDEBUG
+CCOPT = -m64 -fPIC -fno-strict-aliasing -fexceptions
 
 # ---------------------------------------------------------------------
 # Link options and libraries

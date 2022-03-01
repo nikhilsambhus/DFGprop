@@ -149,8 +149,10 @@ class PartitionILP {
 			}
 
 			modelPtr->add(range);
+			nCons++;
 
 		}
+		cout << "Number of edge precedence constraints " << nCons << endl;
 	}
 
 	void addWriteCons() {
@@ -171,6 +173,7 @@ class PartitionILP {
 					w1.setLinearCoef(WipMap[{i_v, p}], 1);
 					modelPtr->add(y1);
 					modelPtr->add(w1);
+					nCons += 2;
 					continue;
 				}
 				for(auto nd : succ) {
@@ -188,7 +191,6 @@ class PartitionILP {
 				
 				IloRange range3 = IloRange(env, -IloInfinity, 1);
 				IloRange range4 = IloRange(env, -IloInfinity, 0);
-				nCons += 2;
 
 				range3.setLinearCoef(ijMap[{i_v, p}], 1);
 				range3.setLinearCoef(YipMap[{i_v, p}], 1);
@@ -201,7 +203,7 @@ class PartitionILP {
 				modelPtr->add(range3);
 				modelPtr->add(range4);
 
-				nCons += 2;
+				nCons += 4;
 			}
 		}
 
@@ -245,7 +247,20 @@ class PartitionILP {
 
 		cout << "Number of communication constraint rows added " << nCons << endl;
 	}
+	
+	void addTransWriteCons() {
+		int nCons = 0;
 
+		for(int p = 0; p < numParts - 1; p++) {
+			IloRange range = IloRange(env, 0, TSize);
+			for(int v = 0; v < numVertices; v++) {
+				range.setLinearCoef(WipMap[{v, p}], 1);
+			}
+			nCons++;
+			modelPtr->add(range);
+		}
+		cout << "Transaction write constraints added = " << nCons << endl;
+	}
 	void addTransCons() {
 
 		int nCons = 0;
@@ -281,7 +296,7 @@ class PartitionILP {
 		int countMaps = 0;
 		try {
 			cplexPtr->extract(*modelPtr);
-			cplexPtr->exportModel("test.lp");
+			//cplexPtr->exportModel("test.lp");
 			if(!cplexPtr->solve()) {
 				cout << "Failed to optimize" << endl;
 				return false;	
@@ -289,6 +304,9 @@ class PartitionILP {
 
 			cout << "Status value = " << cplexPtr->getStatus() << endl;
 			cout << "Objective function value = " << cplexPtr->getObjValue() << endl;
+			cout << "Number of rows = " << cplexPtr->getNrows() << endl;
+			cout << "Number of cols = " << cplexPtr->getNcols() << endl;
+
 			/*IloNumArray vals(env);
 			cplexPtr->getValues(vals, *varPtr);
 			cout << "Solution vector = " << vals << endl; */
@@ -313,7 +331,7 @@ class PartitionILP {
 		for(int i = 0; i < numVertices; i++) {
 			int count = 0;
 			for(int j = 0; j < numParts; j++) {
-				if(cplexPtr->getValue(ijMap[{i, j}]) == true) {
+				if(cplexPtr->getValue(ijMap[{i, j}]) == 1) {
 					count++;
 				}
 			}
@@ -332,13 +350,7 @@ class PartitionILP {
 			assert(count <= RSize);
 		}
 
-		cout << "Asserting edge precedence; transaction limits" << endl;
-		map<int, int> inPartCounts;//store incoming edges onto this partition 
-		map<int, int> outPartCounts; //store outgoing edges from this partition
-		for(int i = 0; i < numParts; i++) {
-			inPartCounts[i] = 0;
-			outPartCounts[i] = 0;
-		}
+		cout << "Asserting edge precedences" << endl;
 		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
 			uint32_t src = it->getSrcNodeID();
 			uint32_t dest = it->getDestNodeID();
@@ -365,27 +377,64 @@ class PartitionILP {
 			assert(srcPart != -1); //mapping should be found
 			assert(srcPart <= destPart); //partition of source should be less than destination
 
-			if(srcPart < destPart) { //for edge not present in the same partition
-				outPartCounts[srcPart]++; //increment appropriate transaction counts
-				inPartCounts[destPart]++;
-			}
 
 		}
 
-		cout << "Cross partition transactions: In count|Out count for each partition ";
-		//Assert cross partition counts are meet
+		cout << "Asserting Wips and trans limits " << endl;
+		
+		map<int, int> writeCount; //for each partition
 		for(int i = 0; i < numParts; i++) {
-			assert(inPartCounts[i] <= TSize);
-			cout << inPartCounts[i] << "|";
-			assert(outPartCounts[i] <= TSize);
-			cout << outPartCounts[i] << " ";
+			writeCount[i] = 0;
+		}
+		for(int v = 0; v < numVertices; v++) {
+			for(int p = 0; p < numParts - 1; p++) {
+				//check if v is in partition p
+				if(cplexPtr->getValue(ijMap[{v, p}]) == 1) {
+					list<Node> succ;
+					graph.getSuccessors(v, succ);
+					//check if any successor mapped to partition greater than p
+					//check successors of v where they are mapped
+					bool someNodeMap = false;
+					for(auto nd : succ) {
+						int j = nd.getID();
+						bool isNodeMap = false;
+						for(int l = p + 1; l < numParts; l++) {
+							if(cplexPtr->getValue(ijMap[{j ,l}]) == 1) {
+								isNodeMap = true;
+								break;
+							}
+						}
+						if(isNodeMap == true) {
+							someNodeMap = true;
+							break;
+						}
+					}
+					
+					//if some succ node is mapped to next partition 
+					if(someNodeMap == true) {
+						assert(cplexPtr->getValue(WipMap[{v, p}]) == 1);
+						//inc count of base node writes
+						writeCount[p] = writeCount[p] + 1;
+					}else {
+						assert(cplexPtr->getValue(WipMap[{v, p}]) == 0);
+					}
+				}
+				else { //if v is not in p them Wvp must be 0
+					assert(cplexPtr->getValue(WipMap[{v, p}]) == 0);
+				}
+			}
+		}
+
+
+		cout << "Write counts ";
+		for(int i = 0; i < numParts; i++) {
+			//write trans count
+			cout << writeCount[i] << " ";
+			assert(writeCount[i] <= TSize);
 		}
 		cout << endl;
-
-
 	}
 };
-static void usage (const char *progname);
 
 int main (int argc, char **argv)
 {
@@ -415,6 +464,7 @@ int main (int argc, char **argv)
 		gp1->addSizeCons();
 		gp1->addEdgePrec();
 		gp1->addWriteCons();
+		gp1->addTransWriteCons();
 		//gp1->addCommCons();
 		//gp1->addTransCons();
 		if(gp1->solve() == true) {
@@ -422,7 +472,6 @@ int main (int argc, char **argv)
 			cout << "Solution found in iteration number " << i << " with partitions " << numParts << endl;
 			break;
 		}
-		break;
 		numParts++;
 		delete gp1;
 	}
