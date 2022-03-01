@@ -423,7 +423,8 @@ class PartitionILP {
 		for(int v = 0; v < numVertices; v++) {
 			for(int p = 0; p < numParts - 1; p++) {
 				//check if v is in partition p
-				if(cplexPtr->getValue(ijMap[{v, p}]) == 1) {
+				double val = cplexPtr->getValue(ijMap[{v, p}]);
+				if(compareEqual(val, 1) == true) {
 					list<Node> succ;
 					graph.getSuccessors(v, succ);
 					//check if any successor mapped to partition greater than p
