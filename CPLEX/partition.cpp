@@ -27,11 +27,14 @@ class PartitionILP {
 	int numVertices;
 	int numEdges;
 	int numParts;
-	int loadWeight = 10;
+	int loadWeight = 1; //weight for load from memory
+	int writeWeight = 1; //weight for intermediate writes
+	vector<int> loadIdVec;
 	//for each pair, there are {k,l} pair mappings
-	map<pair<int, int>, IloBoolVar> ijMap; //map of ij values
-	map<pair<int, int>, IloBoolVar> WipMap; //map of wip values
-	map<pair<int, int>, IloBoolVar> YipMap; //map of yip values
+	map<pair<int, int>, IloBoolVar> ijMap; //map of ij vars
+	map<pair<int, int>, IloBoolVar> WipMap; //map of wip vars
+	map<pair<int, int>, IloBoolVar> YipMap; //map of yip vars
+	map<int, IloBoolVar> lpMap; //vector of load reuse vars
 	vector<map<pair<int, int>, IloBoolVar>> klMapVec;//map of kl values for cross partition edges
 	public:
 	PartitionILP(DAG gp, int rsize, int tsize, int nPts) {
@@ -89,11 +92,26 @@ class PartitionILP {
 				varPtr->add(YipMap[{i, j}]);
 				varPtr->add(WipMap[{i, j}]);
 				count += 2;
-				objective.setLinearCoef(WipMap[{i, j}], 1);
+				objective.setLinearCoef(WipMap[{i, j}], writeWeight);
 			}
 		}
 		cout << "Y and W variables added count = " << count << endl;
 
+		
+		//iterate through graph nodes and store load ids in a separate vector
+		for(list<Node>::iterator it = graph.nodeBegin(); it != graph.nodeEnd(); it++) {
+			string op = it->getLabel();
+			if(op.find("load") != string::npos || op.find("LOD") != string::npos) { ///two possible vals for describing load nodes
+				loadIdVec.push_back(it->getID());
+			}
+		}
+
+		//add partition number of load boolean variable..each represent if there is atleast one load in given partition
+		for(int i = 0; i < numParts; i++) {
+			lpMap[i] = IloBoolVar(env);
+			objective.setLinearCoef(lpMap[i], loadWeight); //set objective function's coefficient to loadweight
+		}
+		//print out number of loads present in the graph
 		/*this->klMapVec.clear();
 		count = 0;
 		//add columns for each edge (parts * parts) for communication objective function
@@ -307,17 +325,44 @@ class PartitionILP {
 		cout << "Number of transaction constraint rows added " << nCons << endl;
 
 	}
+	
+	void addLoadReuse() {
+		//two equations for each partition
+		for(int p = 0; p < numParts; p++) {
+			IloRange range1 = IloRange(env, -IloInfinity, 0);
+			IloRange range2 = IloRange(env, -IloInfinity, 0);
+			
+			//negative sum all Xlp where l is load
+			for(int ld: loadIdVec) {
+				range1.setLinearCoef(ijMap[{ld, p}], -1);
+			}
+			//plus Lp
+			range1.setLinearCoef(lpMap[p], 1);
 
+			//positive sum all Xlp where l is load
+			for(int ld : loadIdVec) {
+				range2.setLinearCoef(ijMap[{ld, p}], 1);
+			}
+			
+			//- num of loads * lp
+			range2.setLinearCoef(lpMap[p], -1 * (int)loadIdVec.size());
+			
+			modelPtr->add(range1);
+			modelPtr->add(range2);
+		}
+		
+	}
 	bool solve() {
 		int countMaps = 0;
 		try {
 			cplexPtr->extract(*modelPtr);
-			cplexPtr->exportModel("test.lp");
+			//cplexPtr->exportModel("test.lp");
 			if(!cplexPtr->solve()) {
 				cout << "Failed to optimize" << endl;
 				return false;	
 			}
 
+			cout << "Number of load nodes " << loadIdVec.size() << endl;
 			cout << "Status value = " << cplexPtr->getStatus() << endl;
 			cout << "Objective function value = " << cplexPtr->getObjValue() << endl;
 			cout << "Number of rows = " << cplexPtr->getNrows() << endl;
@@ -459,6 +504,22 @@ class PartitionILP {
 			}
 		}
 
+		//count cluster of loads
+		int clusterLoads = 0;
+		for(int p = 0; p < numParts; p++) {
+			//check if any load is present in current partition p
+			for(int i : loadIdVec) {
+				double val = cplexPtr->getValue(ijMap[{i, p}]);
+				//check if load val i is mapped to this partition
+				if(compareEqual(val, 1) == true) {
+					clusterLoads++; //at least one load is present in this partition, increment cluster count and break
+					break;
+				}
+			}
+		}
+
+		cout << "Load cluster count = " << clusterLoads << endl;
+
 
 		cout << "Write counts ";
 		for(int i = 0; i < numParts; i++) {
@@ -507,6 +568,7 @@ int main (int argc, char **argv)
 		gp1->addEdgePrec();
 		gp1->addWriteCons();
 		gp1->addTransWriteCons();
+		//gp1->addLoadReuse();
 		//gp1->addCommCons();
 		//gp1->addTransCons();
 		if(gp1->solve() == true) {
