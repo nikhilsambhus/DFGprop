@@ -426,6 +426,17 @@ class PartitionILP {
 		}
 		return false;
 	}
+
+	//find partition to which this vertex is mapped to
+	int getMapPart(int v) {
+		for(int p = 0; p < numParts; p++) {
+			double val = cplexPtr->getValue(ijMap[{v, p}]);
+			if(compareEqual(val, 1) == true) {
+				return p;
+			}
+		}
+		return -1;//return -1 if no partition found, ideally should not happen
+	}
 	void ValidateSoln() {
 		cout << "Asserting uniqueness constraints" << endl;
 		//Check if vertex mapped to only one partition
@@ -536,22 +547,24 @@ class PartitionILP {
 			}
 		}
 
-		//count cluster of loads
-		int clusterLoads = 0;
-		/*for(int p = 0; p < numParts; p++) {
-			//check if any load is present in current partition p
-			for(int i : loadIdVec) {
-				double val = cplexPtr->getValue(ijMap[{i, p}]);
-				//check if load val i is mapped to this partition
-				if(compareEqual(val, 1) == true) {
-					clusterLoads++; //at least one load is present in this partition, increment cluster count and break
-					break;
-				}
+		//count distinct cluster of loads
+		int loadTrans = 0;
+		for(elem : loadGroups) {
+			//count consider each group nodes
+			vector<int> loadsV = elem.second;
+			map<int, bool> partMapd; //maintain partition to which a load node in this group  is mapped
+			for(int ld : loadsV) {
+				int p = getMapPart(ld);
+				assert(p != -1);
+				partMapd[p] = true;
 			}
+			
+			loadTrans = loadTrans + partMapd.size();
+			//size of partMapd tells how many different partitions loads are present..or how many load transactions need to be issued
 		}
-
-		cout << "Load cluster count = " << clusterLoads << endl;
-		*/
+	
+		cout << "Load transactions = " << loadTrans << endl;
+		
 
 		cout << "Write counts ";
 		for(int i = 0; i < numParts; i++) {
