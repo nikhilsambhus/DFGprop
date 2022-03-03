@@ -1,13 +1,13 @@
 digraph  {
-   0 [label="load;1024"];
+   0 [label="load;0"];
    1 [label="call_max"];
-   2 [label="load;1024"];
-   3 [label="load;1024"];
-   4 [label="load;1024"];
-   5 [label="load;1024"];
-   6 [label="load;1024"];
-   7 [label="load;1024"];
-   8 [label="load;1024"];
+   2 [label="load;0"];
+   3 [label="load;0"];
+   4 [label="load;0"];
+   5 [label="load;1"];
+   6 [label="load;1"];
+   7 [label="load;1"];
+   8 [label="load;1"];
    9 [label="fsub"];
    10 [label="call_max"];
    11 [label="call_min"];

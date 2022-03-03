@@ -18,6 +18,9 @@ main.o : ${SRC}/main.cpp ${INC}/* ${GR_LIB} DFGPart.o DFGAnaly.o
 Normalize.out : ${SRC}/Normalize.cpp ${INC}/DFGUtils.h ${GR_LIB}
 	${CC} -std=c++11 ${SRC}/Normalize.cpp -I ${INC} ${GR_LIB} -o Normalize.out
 
+ConvLoadSan.out : ${SRC}/ConvLoadSan.cpp ${INC}/* ${GR_LIB}
+	${CC} -std=c++11 ${SRC}/ConvLoadSan.cpp -I ${INC} ${GR_LIB} -o ConvLoadSan.out
+
 ilp1.o : ${SRC}/ilp1.cpp ${INC}/* ${GR_LIB}
 	${CC} -std=c++11 ${SRC}/ilp1.cpp -I ${INC} ${GR_LIB} -o ilp1.o
 

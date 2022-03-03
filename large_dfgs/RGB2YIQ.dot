@@ -1,11 +1,11 @@
 digraph RGB2YIQ {
-  0 [label="load"];
-  1 [label="load"];
+  0 [label="load;0"];
+  1 [label="load;0"];
   2 [label="mul"];
   3 [label="mul"];
   4 [label="mul"];
   5 [label="mul"];
-  6 [label="load"];
+  6 [label="load;0"];
   7 [label="mul"];
   8 [label="mul"];
   9 [label="add"];

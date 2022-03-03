@@ -1,10 +1,10 @@
 digraph {
-  0 [label="load"];
-  1 [label="load"];
-  2 [label="load"];
-  3 [label="load"];
-  4 [label="load"];
-  5 [label="load"];
+  0 [label="load;0"];
+  1 [label="load;0"];
+  2 [label="load;0"];
+  3 [label="load;0"];
+  4 [label="load;1"];
+  5 [label="load;1"];
   6 [label="sub"];
   7 [label="sub"];
   8 [label="sub"];
@@ -17,7 +17,7 @@ digraph {
   15 [label="sqrt"];
   16 [label="div"];
   17 [label="mul"];
-  18 [label="load"];
+  18 [label="load;1"];
   19 [label="mul"];
   20 [label="mul"];
   21 [label="mul"];

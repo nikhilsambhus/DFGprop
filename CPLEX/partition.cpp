@@ -616,7 +616,7 @@ int main (int argc, char **argv)
 		gp1->addEdgePrec();
 		gp1->addWriteCons();
 		gp1->addTransWriteCons();
-		//gp1->addLoadReuse();
+		gp1->addLoadReuse();
 		//gp1->addCommCons();
 		//gp1->addTransCons();
 		if(gp1->solve() == true) {
