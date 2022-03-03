@@ -29,21 +29,24 @@ class PartitionILP {
 	int numParts;
 	int loadWeight = 1; //weight for load from memory
 	int writeWeight = 1; //weight for intermediate writes
-	vector<int> loadIdVec;
+	map<int, vector<int>> loadGroups;
 	//for each pair, there are {k,l} pair mappings
 	map<pair<int, int>, IloBoolVar> ijMap; //map of ij vars
 	map<pair<int, int>, IloBoolVar> WipMap; //map of wip vars
 	map<pair<int, int>, IloBoolVar> YipMap; //map of yip vars
-	map<int, IloBoolVar> lpMap; //vector of load reuse vars
+
+	map<int, vector<IloBoolVar>> lpMap; //loadgroup_id->lpvector..one lp vector for each load group..lp vector has each element for one partition
+
 	vector<map<pair<int, int>, IloBoolVar>> klMapVec;//map of kl values for cross partition edges
 	public:
-	PartitionILP(DAG gp, int rsize, int tsize, int nPts) {
+	PartitionILP(DAG gp, int rsize, int tsize, int nPts, int loadWt) {
 		modelPtr = new IloModel(env);
 		cplexPtr = new IloCplex(env);
 		varPtr = new IloNumVarArray(env);
 		graph = gp;
 		RSize = rsize; //partition size
 		TSize = tsize; //transaction limit size
+		loadWeight = loadWt; //weight of load
 		numVertices = gp.getNumNodes();
 		numEdges = gp.getNumEdges();
 		numParts = nPts;
@@ -98,18 +101,36 @@ class PartitionILP {
 		cout << "Y and W variables added count = " << count << endl;
 
 		
-		//iterate through graph nodes and store load ids in a separate vector
+		//iterate through graph nodes and store load ids in corresponding group vector
 		for(list<Node>::iterator it = graph.nodeBegin(); it != graph.nodeEnd(); it++) {
 			string op = it->getLabel();
 			if(op.find("load") != string::npos || op.find("LOD") != string::npos) { ///two possible vals for describing load nodes
-				loadIdVec.push_back(it->getID());
+				//find group id which is placed after load;"
+				int pos  = op.find(";");
+				int group_id = stoi(op.substr(pos + 1, string::npos)); //from : + 1 till end of string
+				
+				if(loadGroups.find(group_id) != loadGroups.end()) {
+					vector<int> &loadsV = loadGroups[group_id]; //group id data present..append to the vector
+					loadsV.push_back(it->getID());
+				} else {
+					vector<int> loadsV;
+					loadsV.push_back(it->getID());
+					loadGroups[group_id] = loadsV;
+				}
 			}
 		}
 
-		//add partition number of load boolean variable..each represent if there is atleast one load in given partition
-		for(int i = 0; i < numParts; i++) {
-			lpMap[i] = IloBoolVar(env);
-			objective.setLinearCoef(lpMap[i], loadWeight); //set objective function's coefficient to loadweight
+
+		//add group number of lp vectors
+		for(auto elem : loadGroups) {
+			//add partition number of load boolean variable..each represent if there is atleast one load of the group in given partition
+			vector<IloBoolVar> lpV;
+			for(int i = 0; i < numParts; i++) {
+				string name = "lp" + to_string(elem.first) + "," + to_string(i);
+				lpV.push_back(IloBoolVar(env, name.c_str()));
+				objective.setLinearCoef(lpV[i], loadWeight); //set objective function's coefficient to loadweight
+			}
+			lpMap[elem.first] = lpV;
 		}
 		//print out number of loads present in the graph
 		/*this->klMapVec.clear();
@@ -327,42 +348,53 @@ class PartitionILP {
 	}
 	
 	void addLoadReuse() {
-		//two equations for each partition
-		for(int p = 0; p < numParts; p++) {
-			IloRange range1 = IloRange(env, -IloInfinity, 0);
-			IloRange range2 = IloRange(env, -IloInfinity, 0);
-			
-			//negative sum all Xlp where l is load
-			for(int ld: loadIdVec) {
-				range1.setLinearCoef(ijMap[{ld, p}], -1);
-			}
-			//plus Lp
-			range1.setLinearCoef(lpMap[p], 1);
+		for(auto elem : loadGroups) {
+			int group_id = elem.first;
+			//two equations for each partition for a given load group
+			for(int p = 0; p < numParts; p++) {
+				IloRange range1 = IloRange(env, -IloInfinity, 0);
+				IloRange range2 = IloRange(env, -IloInfinity, 0);
 
-			//positive sum all Xlp where l is load
-			for(int ld : loadIdVec) {
-				range2.setLinearCoef(ijMap[{ld, p}], 1);
+				//negative sum all Xlp where ld is load
+				for(int ld: elem.second) {
+					range1.setLinearCoef(ijMap[{ld, p}], -1);
+				}
+				//plus Lp
+				range1.setLinearCoef(lpMap[group_id][p], 1);
+
+				//positive sum all Xlp where ld is load
+				for(int ld : elem.second) {
+					range2.setLinearCoef(ijMap[{ld, p}], 1);
+				}
+
+				//- num of loads * lp
+				range2.setLinearCoef(lpMap[group_id][p], -1 * (int)elem.second.size());
+
+				modelPtr->add(range1);
+				modelPtr->add(range2);
 			}
-			
-			//- num of loads * lp
-			range2.setLinearCoef(lpMap[p], -1 * (int)loadIdVec.size());
-			
-			modelPtr->add(range1);
-			modelPtr->add(range2);
+
 		}
-		
 	}
 	bool solve() {
 		int countMaps = 0;
 		try {
 			cplexPtr->extract(*modelPtr);
-			//cplexPtr->exportModel("test.lp");
+			cplexPtr->exportModel("test.lp");
 			if(!cplexPtr->solve()) {
 				cout << "Failed to optimize" << endl;
 				return false;	
 			}
 
-			cout << "Number of load nodes " << loadIdVec.size() << endl;
+			//get count of total load nodes by iterating through loadgroup map
+			int loadCount = 0;
+			for(auto elem : loadGroups) {
+				loadCount = loadCount + elem.second.size();
+				cout << "Group " << elem.first << " has " << elem.second.size() << " elements\n";
+			}
+			cout << "Number of load nodes " << loadCount << endl;
+
+
 			cout << "Status value = " << cplexPtr->getStatus() << endl;
 			cout << "Objective function value = " << cplexPtr->getObjValue() << endl;
 			cout << "Number of rows = " << cplexPtr->getNrows() << endl;
@@ -506,7 +538,7 @@ class PartitionILP {
 
 		//count cluster of loads
 		int clusterLoads = 0;
-		for(int p = 0; p < numParts; p++) {
+		/*for(int p = 0; p < numParts; p++) {
 			//check if any load is present in current partition p
 			for(int i : loadIdVec) {
 				double val = cplexPtr->getValue(ijMap[{i, p}]);
@@ -519,7 +551,7 @@ class PartitionILP {
 		}
 
 		cout << "Load cluster count = " << clusterLoads << endl;
-
+		*/
 
 		cout << "Write counts ";
 		for(int i = 0; i < numParts; i++) {
@@ -539,10 +571,12 @@ class PartitionILP {
 	}
 };
 
+
+/*args required: dotfilename, size of partition, transaction limit, load weight*/
 int main (int argc, char **argv)
 {
-	if(argc != 4) {
-		cout << "Too few arguments, 3 expected" << endl;
+	if(argc != 5) {
+		cout << "Too few arguments, 4 expected" << endl;
 		return -1;
 	}
 	DAG gp;
@@ -556,12 +590,13 @@ int main (int argc, char **argv)
 
 	int size = atoi(argv[2]);
 	int trans_limit = atoi(argv[3]);
+	int loadWt = atoi(argv[4]);
 	int iterations = 100;
 
 	auto start = chrono::high_resolution_clock::now();
 	int numParts = ceil(float(gp.getNumNodes()) / float(size)); //set initial partition size to total vertices divided by partition size
 	for(int i = 1; i <= iterations; i++) {
-		PartitionILP *gp1 = new PartitionILP(gp, size, trans_limit, numParts);
+		PartitionILP *gp1 = new PartitionILP(gp, size, trans_limit, numParts, loadWt);
 		gp1->addColVars();//set objective function; define all vars
 		gp1->addUniqueCons();
 		gp1->addSizeCons();
