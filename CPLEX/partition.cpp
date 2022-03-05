@@ -263,7 +263,7 @@ class PartitionILP {
 				
 				//set all Rikls to 0 for this particular source node
 				for(int k = 0; k < numParts - 1; k++) {
-					for(int l = k + 1; k < numParts; k++) {
+					for(int l = k + 1; l < numParts; l++) {
 						IloRange rikl = IloRange(env, 0, 0);
 						rikl.setLinearCoef(RiklMap[i][{k, l}], 1);
 						modelPtr->add(rikl);
@@ -293,7 +293,7 @@ class PartitionILP {
 			//Xik + Sil <= 1 + Ri_kl
 			//Xik + Yil >= 2.Ri_kl
 			for(int k = 0; numParts - 1; k++) {
-				for(int l = k + 1; k < numParts; k++) {
+				for(int l = k + 1; l < numParts; l++) {
 					IloRange Xs1 = IloRange(env, -IloInfinity, 1);
 					IloRange Xs2 = IloRange(env, -IloInfinity, 0);
 					
