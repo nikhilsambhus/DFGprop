@@ -159,6 +159,14 @@ class PartitionILP {
 				}
 			}
 		}
+
+		//add all Sil variables
+		for(int i = 0; i < numVertices; i++) {
+			for(int l = 0; l  < numParts; l++) {
+				SilMap[{i, l}] = IloBoolVar(env);
+				varPtr->add(SilMap[{i, l}]);
+			}
+		}
 		//summation in the objective function
 		//print out number of loads present in the graph
 		/*this->klMapVec.clear();
