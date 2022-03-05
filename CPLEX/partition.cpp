@@ -142,7 +142,7 @@ class PartitionILP {
 			map<pair<int, int>, IloBoolVar> rdMap; //define kl variables
 			for(int k = 0; k < numParts - 1; k++) {
 				for(int l = k + 1; l < numParts; l++) {
-					rdMap[{k, l}] = IloBoolVar(env);
+					rdMap[{k, l}] = IloBoolVar(env, ("r_" + to_string(i) + "_" + to_string(k) + "_" + to_string(l)).c_str());
 					varPtr->add(rdMap[{k, l}]); //add variable in the model
 				}
 			}
@@ -163,7 +163,7 @@ class PartitionILP {
 		//add all Sil variables
 		for(int i = 0; i < numVertices; i++) {
 			for(int l = 0; l  < numParts; l++) {
-				SilMap[{i, l}] = IloBoolVar(env);
+				SilMap[{i, l}] = IloBoolVar(env, ("s_" + to_string(i) + "_" + to_string(l)).c_str());
 				varPtr->add(SilMap[{i, l}]);
 			}
 		}
@@ -248,7 +248,6 @@ class PartitionILP {
 
 	//add constraints for reads
 	void addReadCons() {
-
 		int nCons = 0;
 		for(list<Node>::iterator it = graph.nodeBegin(); it != graph.nodeEnd(); it++) {
 			int i = it->getID(); //for each vertex i
@@ -259,6 +258,7 @@ class PartitionILP {
 					IloRange sil = IloRange(env, 0, 0);
 					sil.setLinearCoef(SilMap[{i, l}],  1);
 					modelPtr->add(sil);
+					nCons++;
 				}
 				
 				//set all Rikls to 0 for this particular source node
@@ -267,8 +267,11 @@ class PartitionILP {
 						IloRange rikl = IloRange(env, 0, 0);
 						rikl.setLinearCoef(RiklMap[i][{k, l}], 1);
 						modelPtr->add(rikl);
+						nCons++;
 					}
 				}
+
+				continue;
 			}
 			
 			//for each partition l : sum Xjl (where j is sucessor) >= Sil
@@ -284,6 +287,8 @@ class PartitionILP {
 				Xs1.setLinearCoef(SilMap[{i, l}], 1);
 				Xs2.setLinearCoef(SilMap[{i, l}], -1 * (int)succ.size());
 
+
+				nCons += 2;
 				modelPtr->add(Xs1);
 				modelPtr->add(Xs2);
 
@@ -292,28 +297,30 @@ class PartitionILP {
 			//for each kl pair of r define the following equations
 			//Xik + Sil <= 1 + Ri_kl
 			//Xik + Yil >= 2.Ri_kl
-			for(int k = 0; numParts - 1; k++) {
+			for(int k = 0; k < numParts - 1; k++) {
 				for(int l = k + 1; l < numParts; l++) {
 					IloRange Xs1 = IloRange(env, -IloInfinity, 1);
 					IloRange Xs2 = IloRange(env, -IloInfinity, 0);
 					
 					//Xik + Sil -Rikl <= 1
 					Xs1.setLinearCoef(ijMap[{i, k}], 1);
-					Xs1.setLinearCoef(ijMap[{i, l}], 1);
+					Xs1.setLinearCoef(SilMap[{i, l}], 1);
 					Xs1.setLinearCoef(RiklMap[i][{k, l}], -1);
 					
 					//-Xik - Yil +  2.Ri_kl <= 0
 					Xs2.setLinearCoef(ijMap[{i, k}], -1);
 					Xs2.setLinearCoef(SilMap[{i, l}], -1);
 					Xs2.setLinearCoef(RiklMap[i][{k, l}], 2);
-
+					
+					nCons += 2;
 					modelPtr->add(Xs1);
 					modelPtr->add(Xs2);
 				}
 			}
 
-
 		}
+
+		cout << "Total read constraints " << nCons << endl;
 	}
 	void addWriteCons() {
 		int nCons = 0;
@@ -605,9 +612,11 @@ class PartitionILP {
 		cout << "Asserting Wips and trans limits " << endl;
 		
 		map<int, int> writeCount; //for each partition
+		map<int, int> readCount; //emerging from a partition - key
 		map<int, int> outEdgesCount;
 		for(int i = 0; i < numParts; i++) {
 			writeCount[i] = 0;
+			readCount[i] = 0;
 			outEdgesCount[i] = 0;
 		}
 		for(int v = 0; v < numVertices; v++) {
@@ -617,6 +626,7 @@ class PartitionILP {
 				if(compareEqual(val, 1) == true) {
 					list<Node> succ;
 					graph.getSuccessors(v, succ);
+					map<int, bool> uniqSuc;//count how many successors are mapped into unqiue partitions..key is on partition id of successors
 					//check if any successor mapped to partition greater than p
 					bool someNodeMap = false;
 					for(auto nd : succ) {
@@ -626,10 +636,16 @@ class PartitionILP {
 						//check successors of v where they are mapped
 							double val = cplexPtr->getValue(ijMap[{j, l}]);
 							if(compareEqual(val, 1)) {
+								uniqSuc[l] = true; //vertex v has j which is mapped to l..store it to count how many unique l are present for v
 								isNodeMap = true;
 								outEdgesCount[p] = outEdgesCount[p] + 1; //increment for each edge with dest vertex in subsequent partitions
+								//validate Read output..this means that vertex v mapped to partition p has a destination successor in partition l
+								double val = cplexPtr->getValue(RiklMap[v][{p, l}]);
+								assert(compareEqual(val, 1) == true);
+								break;
 							}
 						}
+
 						if(isNodeMap == true) {
 							someNodeMap = true;
 						}
@@ -639,9 +655,13 @@ class PartitionILP {
 					if(someNodeMap == true) {
 						double val = cplexPtr->getValue(WipMap[{v, p}]);
 						assert(compareEqual(val, 1) == true);
-						//inc count of base node writes
+						//inc count of base node writes..add 1 if a write is consumed by atleast 1 successor
 						writeCount[p] = writeCount[p] + 1;
-					}else {
+						
+						//inc count of reads done by this vertex at partition p..increment by uniq successor partitions
+						readCount[p] = readCount[p] + uniqSuc.size();
+
+					} else {
 						double val = cplexPtr->getValue(WipMap[{v, p}]);
 						assert(compareEqual(val, 0) == true);
 					}
@@ -672,10 +692,11 @@ class PartitionILP {
 		cout << "Load transactions = " << loadTrans << endl;
 		
 
-		cout << "Write counts ";
+		cout << "Write counts|Read counts from this to subsequent partitions ";
 		for(int i = 0; i < numParts; i++) {
 			//write trans count
-			cout << writeCount[i] << " ";
+			cout << writeCount[i] << "|";
+			cout << readCount[i] << " ";
 			assert(writeCount[i] <= TSize);
 		}
 		cout << endl;
