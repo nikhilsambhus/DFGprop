@@ -32,9 +32,12 @@ class PartitionILP {
 	map<int, vector<int>> loadGroups;
 	//for each pair, there are {k,l} pair mappings
 	map<pair<int, int>, IloBoolVar> ijMap; //map of ij vars
-	map<pair<int, int>, IloBoolVar> WipMap; //map of wip vars
+	map<pair<int, int>, IloBoolVar> WipMap; //map of wip vars for writes
 	map<pair<int, int>, IloBoolVar> YipMap; //map of yip vars
 
+	vector<map<pair<int, int>, IloBoolVar>> RiklMap; //for each vertex i, there are kl pairs belonging to k and l partition number each
+	map<pair<int, int>, IloBoolVar> SilMap; //map of sil vars for reads
+	
 	map<int, vector<IloBoolVar>> lpMap; //loadgroup_id->lpvector..one lp vector for each load group..lp vector has each element for one partition
 
 	vector<map<pair<int, int>, IloBoolVar>> klMapVec;//map of kl values for cross partition edges
@@ -132,6 +135,31 @@ class PartitionILP {
 			}
 			lpMap[elem.first] = lpV;
 		}
+
+
+		//define kl variables for each i for reads
+		for(int i = 0; i < numVertices; i++) {
+			map<pair<int, int>, IloBoolVar> rdMap; //define kl variables
+			for(int k = 0; k < numParts - 1; k++) {
+				for(int l = k + 1; l < numParts; l++) {
+					rdMap[{k, l}] = IloBoolVar(env);
+					varPtr->add(rdMap[{k, l}]); //add variable in the model
+				}
+			}
+			RiklMap.push_back(rdMap);//append the kl map for this particular vertex
+		}
+
+		//sum objective function over all each vertex i
+		for(int i = 0; i < numVertices; i++) {
+			//sum of all the partitions starting from 2 to end
+			for(int l = 1; l < numParts; l++) {
+				//sum over all ri variables where p < l
+				for(int p = 0; p < l; p++) {
+					objective.setLinearCoef(RiklMap[i][{p, l}], 1);
+				}
+			}
+		}
+		//summation in the objective function
 		//print out number of loads present in the graph
 		/*this->klMapVec.clear();
 		count = 0;
@@ -210,6 +238,75 @@ class PartitionILP {
 		cout << "Number of edge precedence constraints " << nCons << endl;
 	}
 
+	//add constraints for reads
+	void addReadCons() {
+
+		int nCons = 0;
+		for(list<Node>::iterator it = graph.nodeBegin(); it != graph.nodeEnd(); it++) {
+			int i = it->getID(); //for each vertex i
+			list<Node> succ;
+			graph.getSuccessors(i, succ);
+			if(succ.size() == 0) {
+				for(int l = 0; l < numParts; l++) { //if no successors, set all Sil and Rikls to 0
+					IloRange sil = IloRange(env, 0, 0);
+					sil.setLinearCoef(SilMap[{i, l}],  1);
+					modelPtr->add(sil);
+				}
+				
+				//set all Rikls to 0 for this particular source node
+				for(int k = 0; k < numParts - 1; k++) {
+					for(int l = k + 1; k < numParts; k++) {
+						IloRange rikl = IloRange(env, 0, 0);
+						rikl.setLinearCoef(RiklMap[i][{k, l}], 1);
+						modelPtr->add(rikl);
+					}
+				}
+			}
+			
+			//for each partition l : sum Xjl (where j is sucessor) >= Sil
+			//for each pariition l : sum Xjl (where j is successor) <= Size of succ * Sil
+			for(int l = 0; l < numParts; l++) {
+				IloRange Xs1 = IloRange(env, -IloInfinity, 0);
+				IloRange Xs2 = IloRange(env, -IloInfinity, 0);
+				for(auto nd: succ) {
+					int j = nd.getID();
+					Xs1.setLinearCoef(ijMap[{j, l}], -1);
+					Xs2.setLinearCoef(ijMap[{j, l}], 1);
+				}
+				Xs1.setLinearCoef(SilMap[{i, l}], 1);
+				Xs2.setLinearCoef(SilMap[{i, l}], -1 * (int)succ.size());
+
+				modelPtr->add(Xs1);
+				modelPtr->add(Xs2);
+
+			}
+
+			//for each kl pair of r define the following equations
+			//Xik + Sil <= 1 + Ri_kl
+			//Xik + Yil >= 2.Ri_kl
+			for(int k = 0; numParts - 1; k++) {
+				for(int l = k + 1; k < numParts; k++) {
+					IloRange Xs1 = IloRange(env, -IloInfinity, 1);
+					IloRange Xs2 = IloRange(env, -IloInfinity, 0);
+					
+					//Xik + Sil -Rikl <= 1
+					Xs1.setLinearCoef(ijMap[{i, k}], 1);
+					Xs1.setLinearCoef(ijMap[{i, l}], 1);
+					Xs1.setLinearCoef(RiklMap[i][{k, l}], -1);
+					
+					//-Xik - Yil +  2.Ri_kl <= 0
+					Xs2.setLinearCoef(ijMap[{i, k}], -1);
+					Xs2.setLinearCoef(SilMap[{i, l}], -1);
+					Xs2.setLinearCoef(RiklMap[i][{k, l}], 2);
+
+					modelPtr->add(Xs1);
+					modelPtr->add(Xs2);
+				}
+			}
+
+
+		}
+	}
 	void addWriteCons() {
 		int nCons = 0;
 		for(list<Node>::iterator it = graph.nodeBegin(); it != graph.nodeEnd(); it++) {
@@ -376,6 +473,7 @@ class PartitionILP {
 
 		}
 	}
+
 	bool solve() {
 		int countMaps = 0;
 		try {
@@ -616,7 +714,8 @@ int main (int argc, char **argv)
 		gp1->addEdgePrec();
 		gp1->addWriteCons();
 		gp1->addTransWriteCons();
-		gp1->addLoadReuse();
+		//gp1->addLoadReuse();
+		gp1->addReadCons();
 		//gp1->addCommCons();
 		//gp1->addTransCons();
 		if(gp1->solve() == true) {
