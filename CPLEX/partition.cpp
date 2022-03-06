@@ -31,12 +31,9 @@ class PartitionILP {
 	int writeWeight = 1; //weight for intermediate writes
 	map<int, vector<int>> loadGroups;
 	//for each pair, there are {k,l} pair mappings
-	map<pair<int, int>, IloBoolVar> ijMap; //map of ij vars
-	map<pair<int, int>, IloBoolVar> WipMap; //map of wip vars for writes
-	map<pair<int, int>, IloBoolVar> YipMap; //map of yip vars
-
-	vector<map<pair<int, int>, IloBoolVar>> RiklMap; //for each vertex i, there are kl pairs belonging to k and l partition number each
-	map<pair<int, int>, IloBoolVar> SilMap; //map of sil vars for reads
+	map<pair<int, int>, IloBoolVar> ijMap; //map of Xij vars
+	vector<map<pair<int, int>, IloBoolVar>> XiklMap; //map of Xijk vars for inter communication..for each vertex i there are k and l partition number mappings
+	vector<map<pair<int, int>, IloBoolVar>> YiklMap; //for each vertex i, there are kl pairs belonging to k and l partition number each
 	
 	map<int, vector<IloBoolVar>> lpMap; //loadgroup_id->lpvector..one lp vector for each load group..lp vector has each element for one partition
 
@@ -78,32 +75,6 @@ class PartitionILP {
 		}
 		cout << "Xij variable added count = " << count << endl;
 		
-		count = 0;
-		for(int i = 0; i < numVertices; i++) {
-			for(int j = 0; j < numParts - 1; j++) {
-				string yname = "y";
-				yname = yname + to_string(i);
-				yname = yname + ",";
-				yname = yname + to_string(j);
-
-				YipMap[{i, j}] = IloBoolVar(env, yname.c_str());
-
-				string wname = "w";
-				wname = wname + to_string(i);
-				wname = wname + ",";
-				wname = wname + to_string(j);
-
-				WipMap[{i, j}] = IloBoolVar(env, wname.c_str());
-
-				varPtr->add(YipMap[{i, j}]);
-				varPtr->add(WipMap[{i, j}]);
-				count += 2;
-				objective.setLinearCoef(WipMap[{i, j}], writeWeight);
-			}
-		}
-		cout << "Y and W variables added count = " << count << endl;
-
-		
 		//iterate through graph nodes and store load ids in corresponding group vector
 		for(list<Node>::iterator it = graph.nodeBegin(); it != graph.nodeEnd(); it++) {
 			string op = it->getLabel();
@@ -137,36 +108,57 @@ class PartitionILP {
 		}
 
 
-		//define kl variables for each i for reads
+		//define kl variables for each i for inter communication..define for both y and x variables
 		for(int i = 0; i < numVertices; i++) {
-			map<pair<int, int>, IloBoolVar> rdMap; //define kl variables
+			map<pair<int, int>, IloBoolVar> xdMap; //define kl variables for xikl
+			map<pair<int, int>, IloBoolVar> ydMap; //define kl variables for yikl
 			for(int k = 0; k < numParts - 1; k++) {
 				for(int l = k + 1; l < numParts; l++) {
-					rdMap[{k, l}] = IloBoolVar(env, ("r_" + to_string(i) + "_" + to_string(k) + "_" + to_string(l)).c_str());
-					varPtr->add(rdMap[{k, l}]); //add variable in the model
+					xdMap[{k, l}] = IloBoolVar(env, ("x_" + to_string(i) + "_" + to_string(k) + "_" + to_string(l)).c_str());
+					varPtr->add(xdMap[{k, l}]); //add variable in the model
+					ydMap[{k, l}] = IloBoolVar(env, ("y_" + to_string(i) + "_" + to_string(k) + "_" + to_string(l)).c_str());
+					varPtr->add(ydMap[{k, l}]); //add variable in the model
 				}
 			}
-			RiklMap.push_back(rdMap);//append the kl map for this particular vertex
+			XiklMap.push_back(xdMap);//ap:pend the kl map for this particular vertex
+			YiklMap.push_back(ydMap);//ap:pend the kl map for this particular vertex
 		}
 
-		//sum objective function over all each vertex i
+		//read map to check which xikl should be made 1
+		//this is done because set cofficient 1 simply sets it but if reads and writes are both present then we want set coefficient to be 2
+		vector<map<pair<int, int>, bool>> RiklMap;
+		//sum objective function over all each vertex i..for accounting reads based on Xikl
 		for(int i = 0; i < numVertices; i++) {
-			//sum of all the partitions starting from 2 to end
+			map<pair<int, int>, bool> tmp; 
+			RiklMap.push_back(tmp);//add into read temp map for accounting later
+			//sum of all the partitions starting from 2 to end (numbering starts from 0)
 			for(int l = 1; l < numParts; l++) {
-				//sum over all ri variables where p < l
+				//sum over all xikl variables where p < l
 				for(int p = 0; p < l; p++) {
-					objective.setLinearCoef(RiklMap[i][{p, l}], 1);
+					//objective.setLinearCoef(XiklMap[i][{p, l}], 1);
+					RiklMap[i][{p, l}] = true;//set pl to 1 and count it later while accounting objective for reads
 				}
 			}
 		}
 
-		//add all Sil variables
+		//sum objective function over all each vertex i..for accounting writes based on Xikl
 		for(int i = 0; i < numVertices; i++) {
-			for(int l = 0; l  < numParts; l++) {
-				SilMap[{i, l}] = IloBoolVar(env, ("s_" + to_string(i) + "_" + to_string(l)).c_str());
-				varPtr->add(SilMap[{i, l}]);
+			//sum of all partitions start from 1 to k - 1 (numbering starts from 0)
+			for(int k = 0; k < numParts - 1; k++) {
+				//sum over xikl variables for p > k
+				for(int p = k + 1; p < numParts; p++) {
+					if(RiklMap[i].find({k, p}) == RiklMap[i].end()) {//none was added while accounting for reads
+						objective.setLinearCoef(XiklMap[i][{k, p}], 1);
+					}
+					else {
+						//added while accounting for reads hence take the coefficient as 2 instead
+						objective.setLinearCoef(XiklMap[i][{k,p}], 2);
+					}
+				}
 			}
 		}
+		
+
 		//summation in the objective function
 		//print out number of loads present in the graph
 		/*this->klMapVec.clear();
@@ -246,27 +238,23 @@ class PartitionILP {
 		cout << "Number of edge precedence constraints " << nCons << endl;
 	}
 
-	//add constraints for reads
-	void addReadCons() {
+	//add constraints for inter partition
+	void addInterPartCons() {
 		int nCons = 0;
 		for(list<Node>::iterator it = graph.nodeBegin(); it != graph.nodeEnd(); it++) {
 			int i = it->getID(); //for each vertex i
 			list<Node> succ;
 			graph.getSuccessors(i, succ);
 			if(succ.size() == 0) {
-				for(int l = 0; l < numParts; l++) { //if no successors, set all Sil and Rikls to 0
-					IloRange sil = IloRange(env, 0, 0);
-					sil.setLinearCoef(SilMap[{i, l}],  1);
-					modelPtr->add(sil);
-					nCons++;
-				}
-				
-				//set all Rikls to 0 for this particular source node
+				//set all Xikls and Yikls to 0 for this particular source node
 				for(int k = 0; k < numParts - 1; k++) {
 					for(int l = k + 1; l < numParts; l++) {
-						IloRange rikl = IloRange(env, 0, 0);
-						rikl.setLinearCoef(RiklMap[i][{k, l}], 1);
-						modelPtr->add(rikl);
+						IloRange xikl = IloRange(env, 0, 0);
+						IloRange yikl = IloRange(env, 0, 0);
+						xikl.setLinearCoef(XiklMap[i][{k, l}], 1);
+						yikl.setLinearCoef(YiklMap[i][{k, l}], 1);
+						modelPtr->add(xikl);
+						modelPtr->add(yikl);
 						nCons++;
 					}
 				}
@@ -274,55 +262,55 @@ class PartitionILP {
 				continue;
 			}
 			
-			//for each partition l : sum Xjl (where j is sucessor) >= Sil
-			//for each pariition l : sum Xjl (where j is successor) <= Size of succ * Sil
-			for(int l = 0; l < numParts; l++) {
-				IloRange Xs1 = IloRange(env, -IloInfinity, 0);
-				IloRange Xs2 = IloRange(env, -IloInfinity, 0);
-				for(auto nd: succ) {
-					int j = nd.getID();
-					Xs1.setLinearCoef(ijMap[{j, l}], -1);
-					Xs2.setLinearCoef(ijMap[{j, l}], 1);
+			//for each partition pair kl : sum Xjl (where j is sucessor) >= Yikl
+			//for each pariition pair kl : sum Xjl (where j is successor) <= Size of succ * Yikl
+			for(int k = 0; k < numParts - 1; k++) {
+				for(int l = k + 1; l < numParts; l++) {
+					IloRange Xy1 = IloRange(env, -IloInfinity, 0);
+					IloRange Xy2 = IloRange(env, -IloInfinity, 0);
+					for(auto nd: succ) {
+						int j = nd.getID();
+						Xy1.setLinearCoef(ijMap[{j, l}], -1);
+						Xy2.setLinearCoef(ijMap[{j, l}], 1);
+					}
+					Xy1.setLinearCoef(YiklMap[i][{k, l}], 1);
+					Xy2.setLinearCoef(YiklMap[i][{k, l}], -1 * (int)succ.size());
+
+					nCons += 2;
+					modelPtr->add(Xy1);
+					modelPtr->add(Xy2);
 				}
-				Xs1.setLinearCoef(SilMap[{i, l}], 1);
-				Xs2.setLinearCoef(SilMap[{i, l}], -1 * (int)succ.size());
-
-
-				nCons += 2;
-				modelPtr->add(Xs1);
-				modelPtr->add(Xs2);
-
 			}
 
 			//for each kl pair of r define the following equations
-			//Xik + Sil <= 1 + Ri_kl
-			//Xik + Yil >= 2.Ri_kl
+			//Xik + Yikl <= 1 + Xikl
+			//Xik + Yikl >= 2.Xikl
 			for(int k = 0; k < numParts - 1; k++) {
 				for(int l = k + 1; l < numParts; l++) {
-					IloRange Xs1 = IloRange(env, -IloInfinity, 1);
-					IloRange Xs2 = IloRange(env, -IloInfinity, 0);
+					IloRange Xy1 = IloRange(env, -IloInfinity, 1);
+					IloRange Xy2 = IloRange(env, -IloInfinity, 0);
 					
-					//Xik + Sil -Rikl <= 1
-					Xs1.setLinearCoef(ijMap[{i, k}], 1);
-					Xs1.setLinearCoef(SilMap[{i, l}], 1);
-					Xs1.setLinearCoef(RiklMap[i][{k, l}], -1);
+					//Xik + Yikl -Xikl <= 1
+					Xy1.setLinearCoef(ijMap[{i, k}], 1);
+					Xy1.setLinearCoef(YiklMap[i][{k, l}], 1);
+					Xy1.setLinearCoef(XiklMap[i][{k, l}], -1);
 					
-					//-Xik - Yil +  2.Ri_kl <= 0
-					Xs2.setLinearCoef(ijMap[{i, k}], -1);
-					Xs2.setLinearCoef(SilMap[{i, l}], -1);
-					Xs2.setLinearCoef(RiklMap[i][{k, l}], 2);
+					//-Xik - Yikl +  2.Xikl <= 0
+					Xy2.setLinearCoef(ijMap[{i, k}], -1);
+					Xy2.setLinearCoef(YiklMap[i][{k, l}], -1);
+					Xy2.setLinearCoef(XiklMap[i][{k, l}], 2);
 					
 					nCons += 2;
-					modelPtr->add(Xs1);
-					modelPtr->add(Xs2);
+					modelPtr->add(Xy1);
+					modelPtr->add(Xy2);
 				}
 			}
 
 		}
 
-		cout << "Total read constraints " << nCons << endl;
+		cout << "Total inter partition constraints " << nCons << endl;
 	}
-	void addWriteCons() {
+	/*void addWriteCons() {
 		int nCons = 0;
 		for(list<Node>::iterator it = graph.nodeBegin(); it != graph.nodeEnd(); it++) {
 			uint32_t i_v = it->getID();
@@ -413,29 +401,8 @@ class PartitionILP {
 		}
 
 		cout << "Number of communication constraint rows added " << nCons << endl;
-	}
+	}*/
 	
-	void addTransReadWriteCons() {
-		int nCons = 0;
-
-		for(int p = 0; p < numParts - 1; p++) {
-			IloRange range = IloRange(env, 0, TSize);
-			//limit of T
-			//add all Wip and Ri starting from partition p
-			for(int v = 0; v < numVertices; v++) {
-				//add Wip
-				range.setLinearCoef(WipMap[{v, p}], 1);
-				
-				//add all Ri starting from partition p
-				for(int l = p + 1; l < numParts; l++) {
-					range.setLinearCoef(RiklMap[v][{p, l}], 1);
-				}
-			}
-			nCons++;
-			modelPtr->add(range);
-		}
-		cout << "Transaction write and read constraints added = " << nCons << endl;
-	}
 	void addTransCons() {
 
 		int nCons = 0;
@@ -617,7 +584,7 @@ class PartitionILP {
 
 		}
 
-		cout << "Asserting Wips and trans limits " << endl;
+		cout << "Asserting Xills " << endl;
 		
 		map<int, int> writeCount; //for each partition
 		map<int, int> readCount; //emerging from a partition - key
@@ -627,6 +594,7 @@ class PartitionILP {
 			readCount[i] = 0;
 			outEdgesCount[i] = 0;
 		}
+
 		for(int v = 0; v < numVertices; v++) {
 			for(int p = 0; p < numParts - 1; p++) {
 				//check if v is in partition p
@@ -647,8 +615,8 @@ class PartitionILP {
 								uniqSuc[l] = true; //vertex v has j which is mapped to l..store it to count how many unique l are present for v
 								isNodeMap = true;
 								outEdgesCount[p] = outEdgesCount[p] + 1; //increment for each edge with dest vertex in subsequent partitions
-								//validate Read output..this means that vertex v mapped to partition p has a destination successor in partition l
-								double val = cplexPtr->getValue(RiklMap[v][{p, l}]);
+								//validate inter partition output..this means that vertex v mapped to partition p has a destination successor in partition l
+								double val = cplexPtr->getValue(XiklMap[v][{p, l}]);
 								assert(compareEqual(val, 1) == true);
 								break;
 							}
@@ -658,25 +626,16 @@ class PartitionILP {
 							someNodeMap = true;
 						}
 					}
-					
+
 					//if some succ node is mapped to subsequent partitions 
 					if(someNodeMap == true) {
-						double val = cplexPtr->getValue(WipMap[{v, p}]);
-						assert(compareEqual(val, 1) == true);
 						//inc count of base node writes..add 1 if a write is consumed by atleast 1 successor
 						writeCount[p] = writeCount[p] + 1;
-						
+
 						//inc count of reads done by this vertex at partition p..increment by uniq successor partitions
 						readCount[p] = readCount[p] + uniqSuc.size();
 
-					} else {
-						double val = cplexPtr->getValue(WipMap[{v, p}]);
-						assert(compareEqual(val, 0) == true);
-					}
-				}
-				else { //if v is not in p them Wvp must be 0
-					double val = cplexPtr->getValue(WipMap[{v, p}]);
-					assert(compareEqual(val, 0) == true);
+					} 				
 				}
 			}
 		}
@@ -746,14 +705,12 @@ int main (int argc, char **argv)
 	for(int i = 1; i <= iterations; i++) {
 		PartitionILP *gp1 = new PartitionILP(gp, size, trans_limit, numParts, loadWt);
 		gp1->addColVars();//set objective function; define all vars
-		gp1->addUniqueCons();
-		gp1->addSizeCons();
-		gp1->addEdgePrec();
-		gp1->addWriteCons();
-		gp1->addTransReadWriteCons();
-		//gp1->addLoadReuse();
-		gp1->addReadCons();
-		//gp1->addCommCons();
+		gp1->addUniqueCons(); //add uniqness constraints
+		gp1->addSizeCons(); //add size constraints
+		gp1->addEdgePrec(); //add edge precedence constraints
+
+		gp1->addInterPartCons(); //add constraints w.r.t inter partition communication
+		//gp1->addLoadReuse(); //add load reuse constraints
 		//gp1->addTransCons();
 		if(gp1->solve() == true) {
 			gp1->ValidateSoln();
