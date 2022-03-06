@@ -22,6 +22,19 @@ class PartitionILP {
 	IloModel *modelPtr;
 	IloNumVarArray *varPtr;
 	DAG graph;
+
+	int nUniqCons = 0; //uniqness constraints rows count
+	int nCapCons = 0; //capacity contsraints rows count
+	int nPrecCons = 0; //precedence constraints rows count
+	int nIntParCons = 0; //inter partition constraints rows count
+	int nLdStCons = 0; //load/store constraints count
+	int nTransCons = 0; //Transaction constraints count
+
+	int nXij = 0; //number of assignment variables
+	int nLp = 0; //number of loadgroup variables
+	int nXikl = 0; //number of Xikl variables
+	int nYikl = 0; //number of Yikl variables
+
 	int RSize;
 	int TSize;
 	int numVertices;
@@ -74,7 +87,8 @@ class PartitionILP {
 			}
 		}
 		cout << "Xij variable added count = " << count << endl;
-		
+		this->nXij = count; //append count
+
 		//iterate through graph nodes and store load ids in corresponding group vector
 		for(list<Node>::iterator it = graph.nodeBegin(); it != graph.nodeEnd(); it++) {
 			string op = it->getLabel();
@@ -94,7 +108,7 @@ class PartitionILP {
 			}
 		}
 
-
+		count = 0;
 		//add group number of lp vectors
 		for(auto elem : loadGroups) {
 			//add partition number of load boolean variable..each represent if there is atleast one load of the group in given partition
@@ -102,18 +116,21 @@ class PartitionILP {
 			for(int i = 0; i < numParts; i++) {
 				string name = "lp" + to_string(elem.first) + "," + to_string(i);
 				lpV.push_back(IloBoolVar(env, name.c_str()));
+				count++; //increment count of load group variables
 				objective.setLinearCoef(lpV[i], loadWeight); //set objective function's coefficient to loadweight
 			}
 			lpMap[elem.first] = lpV;
 		}
-
-
+		this->nLp = count; //assign count to load group variables
+		
+		count = 0;
 		//define kl variables for each i for inter communication..define for both y and x variables
 		for(int i = 0; i < numVertices; i++) {
 			map<pair<int, int>, IloBoolVar> xdMap; //define kl variables for xikl
 			map<pair<int, int>, IloBoolVar> ydMap; //define kl variables for yikl
 			for(int k = 0; k < numParts - 1; k++) {
 				for(int l = k + 1; l < numParts; l++) {
+					count++; //increment only once..counts are same for xikl and yikl
 					xdMap[{k, l}] = IloBoolVar(env, ("x_" + to_string(i) + "_" + to_string(k) + "_" + to_string(l)).c_str());
 					varPtr->add(xdMap[{k, l}]); //add variable in the model
 					ydMap[{k, l}] = IloBoolVar(env, ("y_" + to_string(i) + "_" + to_string(k) + "_" + to_string(l)).c_str());
@@ -123,6 +140,8 @@ class PartitionILP {
 			XiklMap.push_back(xdMap);//ap:pend the kl map for this particular vertex
 			YiklMap.push_back(ydMap);//ap:pend the kl map for this particular vertex
 		}
+
+		this->nXikl = this->nYikl = count;
 
 		//read map to check which xikl should be made 1
 		//this is done because set cofficient 1 simply sets it but if reads and writes are both present then we want set coefficient to be 2
@@ -406,30 +425,46 @@ class PartitionILP {
 	void addTransCons() {
 
 		int nCons = 0;
-		//(l > k) X^kl_ij < T
+		
+		//for reads transaction constraints..for reads k starts from 1 but 0 should be considered for loads
+		for(int k = 0; k < numParts; k++) {
+			IloRange rdLd = IloRange(env, 0, TSize);
+			//sum over all vertices
+			for(int i = 0; i < numVertices; i++) {
+				//for reads.. p < k sum all Xipk
+				for(int p = 0; p < k; p++) {
+					rdLd.setLinearCoef(XiklMap[i][{p, k}], 1);
+				}
+			}
+
+			//for loads consider for this partition k
+			for(auto elem : lpMap) {
+				auto ldV = elem.second; //vector of load variables for each partition
+				rdLd.setLinearCoef(ldV[k], 1);
+			}
+			
+			nCons++;
+			modelPtr->add(rdLd);
+		}
+
+		//for now considering only writes not stores, hence going from 0 to numparts - 1
+		////// later when consider store groups might simply let go k upto numparts to account for stores
 		for(int k = 0; k < numParts - 1; k++) {
-			IloRange range = IloRange(env, 0, TSize);
-			for(int l = k + 1; l < numParts; l++) {
-				for(auto klMap: this->klMapVec) {
-					range.setLinearCoef(klMap[{k, l}], 1);
+			IloRange wrSt = IloRange(env, 0, TSize);
+			
+			//sum over all vertices
+			for(int i = 0; i < numVertices; i++) {
+				//for writes : p > k
+				for(int p = k + 1; p < numParts; p++) {
+					wrSt.setLinearCoef(XiklMap[i][{k, p}], 1);	
 				}
 			}
-			modelPtr->add(range);
-			nCons++;
-		}
 
-		//(k < l) X^kl_ij < T
-		for(int l = 1; l < numParts; l++) {
-			IloRange range = IloRange(env, 0, TSize);
-			for(int k = 0; k < l; k++) {
-				for(auto klMap: this->klMapVec) {
-					range.setLinearCoef(klMap[{k, l}], 1);
-				}
-			}
-			modelPtr->add(range);
+			/////skip for now but to add constraints for stores
 			nCons++;
+			modelPtr->add(wrSt);
 		}
-
+	
 		cout << "Number of transaction constraint rows added " << nCons << endl;
 
 	}
@@ -584,7 +619,7 @@ class PartitionILP {
 
 		}
 
-		cout << "Asserting Xills " << endl;
+		cout << "Asserting Xikls " << endl;
 		
 		map<int, int> writeCount; //for each partition
 		map<int, int> readCount; //emerging from a partition - key
@@ -642,7 +677,7 @@ class PartitionILP {
 
 		//count distinct cluster of loads
 		int loadTrans = 0;
-		for(elem : loadGroups) {
+		for(auto elem : loadGroups) {
 			//count consider each group nodes
 			vector<int> loadsV = elem.second;
 			map<int, bool> partMapd; //maintain partition to which a load node in this group  is mapped
@@ -710,8 +745,8 @@ int main (int argc, char **argv)
 		gp1->addEdgePrec(); //add edge precedence constraints
 
 		gp1->addInterPartCons(); //add constraints w.r.t inter partition communication
-		//gp1->addLoadReuse(); //add load reuse constraints
-		//gp1->addTransCons();
+		gp1->addLoadReuse(); //add load reuse constraints
+		gp1->addTransCons();
 		if(gp1->solve() == true) {
 			gp1->ValidateSoln();
 			cout << "Solution found in iteration number " << i << " with partitions " << numParts << endl;
