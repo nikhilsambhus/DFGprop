@@ -415,18 +415,26 @@ class PartitionILP {
 		cout << "Number of communication constraint rows added " << nCons << endl;
 	}
 	
-	void addTransWriteCons() {
+	void addTransReadWriteCons() {
 		int nCons = 0;
 
 		for(int p = 0; p < numParts - 1; p++) {
 			IloRange range = IloRange(env, 0, TSize);
+			//limit of T
+			//add all Wip and Ri starting from partition p
 			for(int v = 0; v < numVertices; v++) {
+				//add Wip
 				range.setLinearCoef(WipMap[{v, p}], 1);
+				
+				//add all Ri starting from partition p
+				for(int l = p + 1; l < numParts; l++) {
+					range.setLinearCoef(RiklMap[v][{p, l}], 1);
+				}
 			}
 			nCons++;
 			modelPtr->add(range);
 		}
-		cout << "Transaction write constraints added = " << nCons << endl;
+		cout << "Transaction write and read constraints added = " << nCons << endl;
 	}
 	void addTransCons() {
 
@@ -742,7 +750,7 @@ int main (int argc, char **argv)
 		gp1->addSizeCons();
 		gp1->addEdgePrec();
 		gp1->addWriteCons();
-		gp1->addTransWriteCons();
+		gp1->addTransReadWriteCons();
 		//gp1->addLoadReuse();
 		gp1->addReadCons();
 		//gp1->addCommCons();
