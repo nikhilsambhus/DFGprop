@@ -384,7 +384,7 @@ class PartitionILP {
 			modelPtr->add(rdLd);
 		}
 
-		//for now considering only writes not stores, hence going from 0 to numparts - 1
+		//for writes constraints..for writes k starts from 0 to p - 2 but p - 1 should be considered for stores
 		for(int k = 0; k < numParts; k++) {
 			IloRange wrSt = IloRange(env, 0, TSize);
 			
