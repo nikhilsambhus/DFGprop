@@ -176,31 +176,6 @@ class PartitionILP {
 			}
 		}
 		
-
-		//summation in the objective function
-		//print out number of loads present in the graph
-		/*this->klMapVec.clear();
-		count = 0;
-		//add columns for each edge (parts * parts) for communication objective function
-		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
-			map<pair<int, int>, IloBoolVar> klMap;
-			for(int k = 0; k < numParts; k++) {
-				for(int l = k; l < numParts; l++) {
-					klMap[{k ,l}] = IloBoolVar(env);
-					varPtr->add(klMap[{k, l}]);
-					if(k != l) {
-						objective.setLinearCoef(klMap[{k, l}], 1);
-					}
-					else 
-						objective.setLinearCoef(klMap[{k, l}], 0);
-				}
-				count++;
-			}
-			this->klMapVec.push_back(klMap);
-		}
-		
-		cout << "Xij^kl variable added count = " << count << endl;
-		*/
 		modelPtr->add(objective);
 
 	}
@@ -332,99 +307,7 @@ class PartitionILP {
 		this->nIntParCons = nCons;
 		cout << "Total inter partition constraints " << nCons << endl;
 	}
-	/*void addWriteCons() {
-		int nCons = 0;
-		for(list<Node>::iterator it = graph.nodeBegin(); it != graph.nodeEnd(); it++) {
-			uint32_t i_v = it->getID();
-			for(int p = 0; p < numParts - 1; p++) {
-				IloRange range1 = IloRange(env, -IloInfinity, 0);
-				IloRange range2 = IloRange(env, -IloInfinity, 0);
-				//sum over all successors of this node
-				list<Node> succ;
-				graph.getSuccessors(i_v, succ);
-				if(succ.size() == 0) {
-					//just set yip and wip to 0 and continue
-					IloRange y1 = IloRange(env, 0, 0);
-					IloRange w1 = IloRange(env, 0, 0);
-					y1.setLinearCoef(YipMap[{i_v, p}], 1);
-					w1.setLinearCoef(WipMap[{i_v, p}], 1);
-					modelPtr->add(y1);
-					modelPtr->add(w1);
-					nCons += 2;
-					continue;
-				}
-				for(auto nd : succ) {
-					uint32_t j_v = nd.getID();
-					for(int l = p + 1; l < numParts; l++) { 
-						range1.setLinearCoef(ijMap[{j_v, l}], -1);
-						range2.setLinearCoef(ijMap[{j_v, l}], 1);
-					}
-				}
-				range1.setLinearCoef(YipMap[{i_v, p}], 1);
-				range2.setLinearCoef(YipMap[{i_v, p}], -1 * (int)succ.size());
 
-				modelPtr->add(range1);
-				modelPtr->add(range2);
-				
-				IloRange range3 = IloRange(env, -IloInfinity, 1);
-				IloRange range4 = IloRange(env, -IloInfinity, 0);
-
-				range3.setLinearCoef(ijMap[{i_v, p}], 1);
-				range3.setLinearCoef(YipMap[{i_v, p}], 1);
-				range3.setLinearCoef(WipMap[{i_v, p}], -1);
-				
-				range4.setLinearCoef(ijMap[{i_v, p}], -1);
-				range4.setLinearCoef(YipMap[{i_v, p}], -1);
-				range4.setLinearCoef(WipMap[{i_v, p}], 2);
-
-				modelPtr->add(range3);
-				modelPtr->add(range4);
-
-				nCons += 4;
-			}
-		}
-
-		cout << "Total set of write constraints " << nCons << endl;
-
-	}
-
-	void addCommCons() {
-		int i = 0;
-		
-		//Constraints modelling edges as communication which contain both intrapartition and same partition edges
-		int nCons = 0;
-		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
-			uint32_t src_i = it->getSrcNodeID();
-			uint32_t dest_j = it->getDestNodeID();
-
-			//first constraint sum (p < l) Xi_j^p_l = Xj_l
-			for(int l = 0; l < numParts; l++) {
-				IloRange range = IloRange(env, 0, 0);
-				for(int p = 0; p <= l; p++) {
-					range.setLinearCoef(klMapVec[i][{p, l}], 1);
-				}
-				range.setLinearCoef(ijMap[{dest_j, l}], -1);
-				modelPtr->add(range);
-				nCons++;
-			}
-
-			//second constraint sum (p > k) Xi_j^k_p = Xi_k
-			for(int k = 0; k < numParts; k++) {
-				IloRange range = IloRange(env, 0, 0);
-				for(int p = k; p < numParts; p++) {
-					range.setLinearCoef(klMapVec[i][{k, p}], 1);
-				}
-				range.setLinearCoef(ijMap[{src_i, k}], -1);
-				modelPtr->add(range);
-				nCons++;
-			}
-
-			i++;
-		}
-
-		cout << "Number of communication constraint rows added " << nCons << endl;
-	}*/
-	
 	void addTransCons() {
 
 		int nCons = 0;
@@ -799,7 +682,7 @@ int main (int argc, char **argv)
 		gp1->addEdgePrec(); //add edge precedence constraints
 
 		gp1->addInterPartCons(); //add constraints w.r.t inter partition communication
-		gp1->addLoadReuse(); //add load reuse constraints
+		//gp1->addLoadReuse(); //add load reuse constraints
 		gp1->addTransCons();
 		gp1->printVarCons();
 		if(gp1->solve() == true) {
