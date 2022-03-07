@@ -13,6 +13,7 @@
 #include "Edge.h"
 #include "Graph.h"
 #include <vector>
+#include <map>
 ILOSTLBEGIN
 using namespace std;
 class PartitionILP {
@@ -153,7 +154,7 @@ class PartitionILP {
 				count++; //increment count of load group variables
 				objective.setLinearCoef(lpV[i], loadWeight); //set objective function's coefficient to loadweight
 			}
-			lpMap[elem.first] = lpV;
+			lpgMap[elem.first] = lpV;
 		}
 		this->nLp = count; //assign count to load group variables
 		
@@ -165,12 +166,12 @@ class PartitionILP {
 			for(int i = 0; i < numParts; i++) {
 				string name = "lps" + to_string(elem.first) + "," + to_string(i);
 				lpV.push_back(IloBoolVar(env, name.c_str()));
-				count++; //increment count of load group variables
+				count++; //increment count of store group variables
 				objective.setLinearCoef(lpV[i], loadWeight); //set objective function's coefficient to loadweight
 			}
-			lpMap[elem.first] = lpV;
+			lpsMap[elem.first] = lpV;
 		}
-		this->nLp += count; //assign count to load store group variables
+		this->nLp += count; //assign count to store group variables
 		
 		count = 0;
 		//define kl variables for each i for inter communication..define for both y and x variables
@@ -374,7 +375,7 @@ class PartitionILP {
 			}
 
 			//for loads consider for this partition k
-			for(auto elem : lpMap) {
+			for(auto elem : lpgMap) {
 				auto ldV = elem.second; //vector of load variables for each partition
 				rdLd.setLinearCoef(ldV[k], 1);
 			}
@@ -384,8 +385,7 @@ class PartitionILP {
 		}
 
 		//for now considering only writes not stores, hence going from 0 to numparts - 1
-		////// later when consider store groups might simply let go k upto numparts to account for stores
-		for(int k = 0; k < numParts - 1; k++) {
+		for(int k = 0; k < numParts; k++) {
 			IloRange wrSt = IloRange(env, 0, TSize);
 			
 			//sum over all vertices
@@ -396,7 +396,12 @@ class PartitionILP {
 				}
 			}
 
-			/////skip for now but to add constraints for stores
+			//for stores consider for this partition k
+			for(auto elem : lpsMap) {
+				auto ldV = elem.second; //vector of store variables for each partition
+				wrSt.setLinearCoef(ldV[k], 1);
+			}
+
 			nCons++;
 			modelPtr->add(wrSt);
 		}
@@ -406,29 +411,40 @@ class PartitionILP {
 
 	}
 	
-	void addLoadReuse() {
+	//load store reuse constraints
+	void addLoadStoreReuse() {
 		int nCons = 0;
-		for(auto elem : loadGroups) {
+		//merge load and store maps as constraints have to be defined for all
+		map<int, vector<IloBoolVar>> allLSMap;
+		allLSMap.insert(lpgMap.begin(), lpgMap.end());
+		allLSMap.insert(lpsMap.begin(), lpsMap.end());
+
+		//merge load store groups
+		map<int, vector<int>> allLSGroups;
+		allLSGroups.insert(loadGroups.begin(), loadGroups.end());
+		allLSGroups.insert(storeGroups.begin(), storeGroups.end());
+
+		for(auto elem : allLSGroups) {
 			int group_id = elem.first;
-			//two equations for each partition for a given load group
+			//two equations for each partition for a given load or store group
 			for(int p = 0; p < numParts; p++) {
 				IloRange range1 = IloRange(env, -IloInfinity, 0);
 				IloRange range2 = IloRange(env, -IloInfinity, 0);
 
-				//negative sum all Xlp where ld is load
+				//negative sum all Xlp where ld is load or store
 				for(int ld: elem.second) {
 					range1.setLinearCoef(ijMap[{ld, p}], -1);
 				}
 				//plus Lp
-				range1.setLinearCoef(lpMap[group_id][p], 1);
+				range1.setLinearCoef(allLSMap[group_id][p], 1);
 
-				//positive sum all Xlp where ld is load
+				//positive sum all Xlp where ld is load or store
 				for(int ld : elem.second) {
 					range2.setLinearCoef(ijMap[{ld, p}], 1);
 				}
 
 				//- num of loads * lp
-				range2.setLinearCoef(lpMap[group_id][p], -1 * (int)elem.second.size());
+				range2.setLinearCoef(allLSMap[group_id][p], -1 * (int)elem.second.size());
 				
 				nCons += 2;
 				modelPtr->add(range1);
@@ -706,7 +722,27 @@ class PartitionILP {
 		}
 	
 		cout << "Load transactions = " << loadTrans << endl;
+
+		//count distinct cluster of stores
+		int storeTrans = 0;
+		for(auto elem : storeGroups) {
+			//count consider each group nodes
+			vector<int> storesV = elem.second;
+			map<int, bool> partMapd; //maintain partition to which a store node in this group is mapped
+			for(int ld : storesV) {
+				int p = getMapPart(ld);
+				assert(p != -1);
+				partMapd[p] = true;
+			}
+			
+			storeTrans = storeTrans + partMapd.size();
+			//size of partMapd tells how many different partitions loads are present..or how many load transactions need to be issued
+		}
+	
+		cout << "Store transactions = " << storeTrans << endl;
 		
+
+
 
 		cout << "Write counts|Out edges counts ";
 		for(int i = 0; i < numParts; i++) {
@@ -763,7 +799,7 @@ int main (int argc, char **argv)
 		gp1->addEdgePrec(); //add edge precedence constraints
 
 		gp1->addInterPartCons(); //add constraints w.r.t inter partition communication
-		gp1->addLoadReuse(); //add load reuse constraints
+		gp1->addLoadStoreReuse(); //add load reuse constraints
 		gp1->addTransCons();
 		gp1->printVarCons();
 		if(gp1->solve() == true) {
