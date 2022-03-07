@@ -33,27 +33,36 @@ class PartitionILP {
 	int nXij = 0; //number of assignment variables
 	int nLp = 0; //number of loadgroup variables
 	int nInPa = 0; //number of Xikl and Yikl variables
+	
+	int numLoads = 0;// total number of loads
+	int numStores = 0; //total number of stores
+	
+	int Vout; //number of vertices having non-zero successors
 
-	int RSize;
-	int TSize;
+	int RSize; //capacity or size of a partition
+	int TSize; //transaction limit
+
 	int numVertices;
 	int numEdges;
 	int numParts;
 	int loadWeight = 1; //weight for load from memory
 	int writeWeight = 1; //weight for intermediate writes
 	map<int, vector<int>> loadGroups;
+	map<int, vector<int>> storeGroups;
 	//for each pair, there are {k,l} pair mappings
 	map<pair<int, int>, IloBoolVar> ijMap; //map of Xij vars
 	vector<map<pair<int, int>, IloBoolVar>> XiklMap; //map of Xijk vars for inter communication..for each vertex i there are k and l partition number mappings
 	vector<map<pair<int, int>, IloBoolVar>> YiklMap; //for each vertex i, there are kl pairs belonging to k and l partition number each
 	
-	map<int, vector<IloBoolVar>> lpMap; //loadgroup_id->lpvector..one lp vector for each load group..lp vector has each element for one partition
+	map<int, vector<IloBoolVar>> lpgMap; //loadgroup_id->lpvector..one lp vector for each load group..lp vector has each element for one partition
+	map<int, vector<IloBoolVar>> lpsMap; //loadgroup_id->lpvector..one lp vector for each store group..lp vector has each element for one partition
 
 	vector<map<pair<int, int>, IloBoolVar>> klMapVec;//map of kl values for cross partition edges
 	public:
 	PartitionILP(DAG gp, int rsize, int tsize, int nPts, int loadWt) {
 		modelPtr = new IloModel(env);
-		cplexPtr = new IloCplex(env);
+	 //transaction limit
+	 cplexPtr = new IloCplex(env);
 		varPtr = new IloNumVarArray(env);
 		graph = gp;
 		RSize = rsize; //partition size
@@ -104,16 +113,42 @@ class PartitionILP {
 					loadsV.push_back(it->getID());
 					loadGroups[group_id] = loadsV;
 				}
+
+				this->numLoads++;//inc number of loads
+			} else if(op.find("store") != string::npos || op.find("STR") != string::npos) { ///two possible vals for describing load nodes
+				//find group id which is placed after store;"
+				int pos  = op.find(";");
+				int group_id = stoi(op.substr(pos + 1, string::npos)); //from : + 1 till end of string
+				
+				if(storeGroups.find(group_id) != storeGroups.end()) {
+					vector<int> &storesV = storeGroups[group_id]; //group id data present..append to the vector
+					storesV.push_back(it->getID());
+				} else {
+					vector<int> storesV;
+					storesV.push_back(it->getID());
+					storeGroups[group_id] = storesV;
+				}
+				this->numStores++; //inc number of stores
 			}
+			
+			int id = it->getID(); //get id of node 
+			list<Node> succ;
+			graph.getSuccessors(id, succ);
+			//if successors present increment vout
+			if(succ.size() > 0) {
+				this->Vout++;
+			}
+
 		}
 
 		count = 0;
-		//add group number of lp vectors
+
+		//add group number of lp vectors..these are for loads
 		for(auto elem : loadGroups) {
 			//add partition number of load boolean variable..each represent if there is atleast one load of the group in given partition
 			vector<IloBoolVar> lpV;
 			for(int i = 0; i < numParts; i++) {
-				string name = "lp" + to_string(elem.first) + "," + to_string(i);
+				string name = "lpg" + to_string(elem.first) + "," + to_string(i);
 				lpV.push_back(IloBoolVar(env, name.c_str()));
 				count++; //increment count of load group variables
 				objective.setLinearCoef(lpV[i], loadWeight); //set objective function's coefficient to loadweight
@@ -121,6 +156,21 @@ class PartitionILP {
 			lpMap[elem.first] = lpV;
 		}
 		this->nLp = count; //assign count to load group variables
+		
+		count = 0;
+		//add group number of lp vectors..these are for stores
+		for(auto elem : storeGroups) {
+			//add partition number of store boolean variable..each represent if there is atleast one store of the group in given partition
+			vector<IloBoolVar> lpV;
+			for(int i = 0; i < numParts; i++) {
+				string name = "lps" + to_string(elem.first) + "," + to_string(i);
+				lpV.push_back(IloBoolVar(env, name.c_str()));
+				count++; //increment count of load group variables
+				objective.setLinearCoef(lpV[i], loadWeight); //set objective function's coefficient to loadweight
+			}
+			lpMap[elem.first] = lpV;
+		}
+		this->nLp += count; //assign count to load store group variables
 		
 		count = 0;
 		//define kl variables for each i for inter communication..define for both y and x variables
@@ -393,30 +443,61 @@ class PartitionILP {
 	void printVarCons() {
 		cout << graph.getNumNodes() << " ";
 		cout << graph.getNumEdges() << " ";
-
-		int vals = 0; // summation of cols
-		cout << nXij << " ";
-		vals += nXij;
-		cout << nLp <<  " ";
-		vals += nLp;
-		cout << nInPa << " ";
-		vals += nInPa;
-		cout << vals << " ";
+		cout << Vout << " ";
+		cout << numLoads <<  " ";
+		cout << numStores << endl;
 		
-		vals = 0; //summation of rows
-		cout << nUniqCons << " ";
-		vals += nUniqCons;
-		cout << nCapCons << " ";
-		vals += nCapCons;
-		cout << nPrecCons << " ";
-		vals += nPrecCons;
-		cout << nIntParCons << " ";
-		vals += nIntParCons;
-		cout << nLdStCons << " ";
-		vals += nLdStCons;
-		cout << nTransCons << " ";
-		vals += nTransCons;
-		cout << vals << " ";
+		int coded_tot = 0; // summation of cols expected followed by coded
+		int expected_tot = 0;
+		int expected_Xij = numVertices * numParts; // V * P
+		cout << expected_Xij << " " << nXij << " ";
+		expected_tot += expected_Xij; 
+		coded_tot += nXij;
+		
+		int expectedLp = (storeGroups.size() + loadGroups.size()) * numParts; //G * P
+		cout << expectedLp << " " << nLp << " ";
+		coded_tot += nLp;
+		expected_tot += expectedLp;
+		
+		int expectedInPa = Vout * numParts * (numParts - 1); //2 * Vout * P * (P - 1) / 2
+		cout << expectedInPa << " " << nInPa << " ";
+		coded_tot += nInPa;
+		expected_tot += expectedInPa;
+
+		cout << expected_tot << " " << coded_tot << endl;
+		
+		coded_tot = 0; //summation of rows expected followed by coded
+		expected_tot = 0;
+		int expectedUnq = numVertices; //V
+		cout << expectedUnq << " " << nUniqCons << " ";
+		coded_tot += nUniqCons;
+		expected_tot += expectedUnq;
+		
+		int expectedCap = numParts; //P
+		cout << expectedCap << " " << nCapCons << " ";
+		coded_tot += nCapCons;
+		expected_tot += expectedCap;
+
+		int expectedPrec = graph.getNumEdges(); //E
+		cout << expectedPrec << " " << nPrecCons << " ";
+		coded_tot += nPrecCons;
+		expected_tot += expectedPrec;
+		
+		int expectedInt = 2 * Vout * numParts * (numParts - 1);//2 * vout * P * (P-1) 
+		cout << expectedInt << " " << nIntParCons << " ";
+		coded_tot += nIntParCons;
+		expected_tot += expectedInt;
+		
+		int expectedLdSt = 2 * numParts * (storeGroups.size() + loadGroups.size()); // 2 * P * G
+		cout << expectedLdSt << " " << nLdStCons << " ";
+		expected_tot += expectedLdSt;
+		coded_tot += nLdStCons;
+
+		int expectedTrans = 2 * numParts; //2 * P  
+		cout << expectedTrans << " " << nTransCons << " ";
+		expected_tot += expectedTrans;
+		coded_tot += nTransCons;
+		cout << expected_tot << " " << coded_tot << " ";
 
 		cout << endl;
 
@@ -682,7 +763,7 @@ int main (int argc, char **argv)
 		gp1->addEdgePrec(); //add edge precedence constraints
 
 		gp1->addInterPartCons(); //add constraints w.r.t inter partition communication
-		//gp1->addLoadReuse(); //add load reuse constraints
+		gp1->addLoadReuse(); //add load reuse constraints
 		gp1->addTransCons();
 		gp1->printVarCons();
 		if(gp1->solve() == true) {
