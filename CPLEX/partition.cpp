@@ -32,8 +32,7 @@ class PartitionILP {
 
 	int nXij = 0; //number of assignment variables
 	int nLp = 0; //number of loadgroup variables
-	int nXikl = 0; //number of Xikl variables
-	int nYikl = 0; //number of Yikl variables
+	int nInPa = 0; //number of Xikl and Yikl variables
 
 	int RSize;
 	int TSize;
@@ -130,7 +129,7 @@ class PartitionILP {
 			map<pair<int, int>, IloBoolVar> ydMap; //define kl variables for yikl
 			for(int k = 0; k < numParts - 1; k++) {
 				for(int l = k + 1; l < numParts; l++) {
-					count++; //increment only once..counts are same for xikl and yikl
+					count += 2; //increment twice
 					xdMap[{k, l}] = IloBoolVar(env, ("x_" + to_string(i) + "_" + to_string(k) + "_" + to_string(l)).c_str());
 					varPtr->add(xdMap[{k, l}]); //add variable in the model
 					ydMap[{k, l}] = IloBoolVar(env, ("y_" + to_string(i) + "_" + to_string(k) + "_" + to_string(l)).c_str());
@@ -141,7 +140,7 @@ class PartitionILP {
 			YiklMap.push_back(ydMap);//ap:pend the kl map for this particular vertex
 		}
 
-		this->nXikl = this->nYikl = count;
+		this->nInPa = count;
 
 		//read map to check which xikl should be made 1
 		//this is done because set cofficient 1 simply sets it but if reads and writes are both present then we want set coefficient to be 2
@@ -217,6 +216,7 @@ class PartitionILP {
 			modelPtr->add(range);
 			nCons++;
 		}
+		this->nUniqCons = nCons;
 		cout << "Number of uniquness constraints rows added " << nCons << endl;
 	}
 	
@@ -230,6 +230,7 @@ class PartitionILP {
 			nCons++;
 			modelPtr->add(range);
 		}
+		this->nCapCons = nCons;
 		cout << "Number of size constraint rows " << nCons << endl;
 	}
 
@@ -254,6 +255,7 @@ class PartitionILP {
 			nCons++;
 
 		}
+		nPrecCons = nCons;
 		cout << "Number of edge precedence constraints " << nCons << endl;
 	}
 
@@ -274,7 +276,7 @@ class PartitionILP {
 						yikl.setLinearCoef(YiklMap[i][{k, l}], 1);
 						modelPtr->add(xikl);
 						modelPtr->add(yikl);
-						nCons++;
+						nCons += 2;
 					}
 				}
 
@@ -327,6 +329,7 @@ class PartitionILP {
 
 		}
 
+		this->nIntParCons = nCons;
 		cout << "Total inter partition constraints " << nCons << endl;
 	}
 	/*void addWriteCons() {
@@ -464,12 +467,14 @@ class PartitionILP {
 			nCons++;
 			modelPtr->add(wrSt);
 		}
-	
+		
+		this->nTransCons = nCons;
 		cout << "Number of transaction constraint rows added " << nCons << endl;
 
 	}
 	
 	void addLoadReuse() {
+		int nCons = 0;
 		for(auto elem : loadGroups) {
 			int group_id = elem.first;
 			//two equations for each partition for a given load group
@@ -491,14 +496,54 @@ class PartitionILP {
 
 				//- num of loads * lp
 				range2.setLinearCoef(lpMap[group_id][p], -1 * (int)elem.second.size());
-
+				
+				nCons += 2;
 				modelPtr->add(range1);
 				modelPtr->add(range2);
 			}
 
 		}
+		this->nLdStCons = nCons;
 	}
 
+	//function to print all variables and row constraints
+	void printVarCons() {
+		cout << graph.getNumNodes() << " ";
+		cout << graph.getNumEdges() << " ";
+
+		int vals = 0; // summation of cols
+		cout << nXij << " ";
+		vals += nXij;
+		cout << nLp <<  " ";
+		vals += nLp;
+		cout << nInPa << " ";
+		vals += nInPa;
+		cout << vals << " ";
+		
+		vals = 0; //summation of rows
+		cout << nUniqCons << " ";
+		vals += nUniqCons;
+		cout << nCapCons << " ";
+		vals += nCapCons;
+		cout << nPrecCons << " ";
+		vals += nPrecCons;
+		cout << nIntParCons << " ";
+		vals += nIntParCons;
+		cout << nLdStCons << " ";
+		vals += nLdStCons;
+		cout << nTransCons << " ";
+		vals += nTransCons;
+		cout << vals << " ";
+
+		cout << endl;
+
+	}
+	//print stats after iteration
+	void printStats(double time, int iteration) {
+		cout << time << " ";
+		cout << numParts << " ";
+		cout << iteration << endl;
+	}
 	bool solve() {
 		int countMaps = 0;
 		try {
@@ -622,65 +667,70 @@ class PartitionILP {
 		cout << "Asserting Xikls " << endl;
 		
 		map<int, int> writeCount; //for each partition
-		map<int, int> readCount; //emerging from a partition - key
-		map<int, int> outEdgesCount;
+		map<int, int> readCount; //reads required by a partiion key
+		map<int, int> outEdgesCount;//number of out edges to some subsequent partition emerging from key partition
+		map<int, int> inEdgesCount; //number of incoming edges onto this key partition from some previous partition
 		for(int i = 0; i < numParts; i++) {
 			writeCount[i] = 0;
 			readCount[i] = 0;
 			outEdgesCount[i] = 0;
+			inEdgesCount[i] = 0;
 		}
 
+		
+		//find write, out Edges
+		//also counting number of reads as it is easy to do from successors logic given below
 		for(int v = 0; v < numVertices; v++) {
-			for(int p = 0; p < numParts - 1; p++) {
-				//check if v is in partition p
-				double val = cplexPtr->getValue(ijMap[{v, p}]);
-				if(compareEqual(val, 1) == true) {
-					list<Node> succ;
-					graph.getSuccessors(v, succ);
-					map<int, bool> uniqSuc;//count how many successors are mapped into unqiue partitions..key is on partition id of successors
-					//check if any successor mapped to partition greater than p
-					bool someNodeMap = false;
-					for(auto nd : succ) {
-						int j = nd.getID();
-						bool isNodeMap = false; //is j mapped to any of subsequent partitions
-						for(int l = p + 1; l < numParts; l++) {
-						//check successors of v where they are mapped
-							double val = cplexPtr->getValue(ijMap[{j, l}]);
-							if(compareEqual(val, 1)) {
-								uniqSuc[l] = true; //vertex v has j which is mapped to l..store it to count how many unique l are present for v
-								isNodeMap = true;
-								outEdgesCount[p] = outEdgesCount[p] + 1; //increment for each edge with dest vertex in subsequent partitions
-								//validate inter partition output..this means that vertex v mapped to partition p has a destination successor in partition l
-								double val = cplexPtr->getValue(XiklMap[v][{p, l}]);
-								assert(compareEqual(val, 1) == true);
-								break;
-							}
-						}
+			int k = getMapPart(v);
+			list<Node> succ;
+			graph.getSuccessors(v, succ);
+			map<int, bool> uniqDest; //map of unique subsequent partitions to which an out edge goes
+			//uniq dest partitions because they will cause only one read on the destination partition
+			bool isSomeSucc = false; //is there some successor in subsequent partition to which vertex v's output goes
+			for(auto nd : succ) {
+				int s_id = nd.getID(); //get successor id
+				int l = getMapPart(s_id);
+				if(l > k) { //this successor node is mapped to some subsequent partition
+					outEdgesCount[k]++;
+					isSomeSucc = true;
+					uniqDest[l] = true;
+					//assert that X (write) for vertex v starting at partition k and landing in partition l is true
+					double val = cplexPtr->getValue(XiklMap[v][{k, l}]);
+					assert(compareEqual(val, 1) == true);
+				}
+			}
+			
+			//increment respective counts of destinations having unique partitions 
+			for(auto uq : uniqDest) {
+				readCount[uq.first] += 1;
+			}
 
-						if(isNodeMap == true) {
-							someNodeMap = true;
-						}
-					}
+			if(isSomeSucc) { //atleast one succ mapped in subsequent partitions
+				writeCount[k]++;
+			}
+		}
 
-					//if some succ node is mapped to subsequent partitions 
-					if(someNodeMap == true) {
-						//inc count of base node writes..add 1 if a write is consumed by atleast 1 successor
-						writeCount[p] = writeCount[p] + 1;
-
-						//inc count of reads done by this vertex at partition p..increment by uniq successor partitions
-						readCount[p] = readCount[p] + uniqSuc.size();
-
-					} 				
+		//in Edges
+		for(int v = 0; v < numVertices; v++) {
+			int k = getMapPart(v);
+			list<Node> preds;
+			graph.getPredecessors(v, preds);
+			for(auto nd : preds) {
+				int p_id = nd.getID(); //get predecessor id;
+				int l = getMapPart(p_id);
+				if(l < k) {// predecessor mapped to earlier partition
+					inEdgesCount[k]++; //increment incoming edges count to this partition
 				}
 			}
 		}
+			
 
 		//count distinct cluster of loads
 		int loadTrans = 0;
 		for(auto elem : loadGroups) {
 			//count consider each group nodes
 			vector<int> loadsV = elem.second;
-			map<int, bool> partMapd; //maintain partition to which a load node in this group  is mapped
+			map<int, bool> partMapd; //maintain partition to which a load node in this group is mapped
 			for(int ld : loadsV) {
 				int p = getMapPart(ld);
 				assert(p != -1);
@@ -694,19 +744,21 @@ class PartitionILP {
 		cout << "Load transactions = " << loadTrans << endl;
 		
 
-		cout << "Write counts|Read counts from this to subsequent partitions ";
+		cout << "Write counts|Out edges counts ";
 		for(int i = 0; i < numParts; i++) {
 			//write trans count
 			cout << writeCount[i] << "|";
-			cout << readCount[i] << " ";
+			cout << outEdgesCount[i] << ", ";
 			assert(writeCount[i] <= TSize);
 		}
 		cout << endl;
 
 		//print out edges count
-		cout << "Out Edges counts ";
+		cout << "Reads counts|In edges count ";
 		for(int i = 0; i < numParts; i++) {
-			cout << outEdgesCount[i] << " ";
+			cout << readCount[i] << "|";
+			cout << inEdgesCount[i] << ", ";
+			assert(readCount[i] <= TSize);
 		}
 
 		cout << endl;
@@ -735,6 +787,8 @@ int main (int argc, char **argv)
 	int loadWt = atoi(argv[4]);
 	int iterations = 100;
 
+	std::cout << std::fixed << std::setprecision(2); //set precision to 2 decimal places
+
 	auto start = chrono::high_resolution_clock::now();
 	int numParts = ceil(float(gp.getNumNodes()) / float(size)); //set initial partition size to total vertices divided by partition size
 	for(int i = 1; i <= iterations; i++) {
@@ -747,19 +801,19 @@ int main (int argc, char **argv)
 		gp1->addInterPartCons(); //add constraints w.r.t inter partition communication
 		gp1->addLoadReuse(); //add load reuse constraints
 		gp1->addTransCons();
+		gp1->printVarCons();
 		if(gp1->solve() == true) {
 			gp1->ValidateSoln();
+			auto stop = chrono::high_resolution_clock::now();
+			auto duration = chrono::duration_cast<chrono::milliseconds>(stop - start).count();
+			double secs = duration/1000.0;
+			gp1->printStats(secs, i);
 			cout << "Solution found in iteration number " << i << " with partitions " << numParts << endl;
 			break;
 		}
 		numParts++;
 		delete gp1;
 	}
-	auto stop = chrono::high_resolution_clock::now();
-
-	auto duration = chrono::duration_cast<chrono::milliseconds>(stop - start).count();
-	
-	cout << "Time taken in seconds " << duration/1000.0 << endl;
 	
 	return 0;
 }
