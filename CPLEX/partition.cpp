@@ -57,6 +57,7 @@ class PartitionILP {
 	
 	map<int, vector<IloBoolVar>> lpgMap; //loadgroup_id->lpvector..one lp vector for each load group..lp vector has each element for one partition
 	map<int, vector<IloBoolVar>> lpsMap; //loadgroup_id->lpvector..one lp vector for each store group..lp vector has each element for one partition
+	///Important assumption is that ids i.e keys are unique across lgpMap and lpsMap
 
 	vector<map<pair<int, int>, IloBoolVar>> klMapVec;//map of kl values for cross partition edges
 	public:
@@ -457,16 +458,18 @@ class PartitionILP {
 
 	//function to print all variables and row constraints
 	void printVarCons() {
-		cout << graph.getNumNodes() << " ";
+		cout << "Model Inputs " <<  graph.getNumNodes() << " ";
 		cout << graph.getNumEdges() << " ";
 		cout << Vout << " ";
 		cout << numLoads <<  " ";
-		cout << numStores << endl;
+		cout << numStores << " ";
+		cout << loadGroups.size() << " ";
+		cout << storeGroups.size() << endl;
 		
 		int coded_tot = 0; // summation of cols expected followed by coded
 		int expected_tot = 0;
 		int expected_Xij = numVertices * numParts; // V * P
-		cout << expected_Xij << " " << nXij << " ";
+		cout << "Model size variables " << expected_Xij << " " << nXij << " ";
 		expected_tot += expected_Xij; 
 		coded_tot += nXij;
 		
@@ -485,7 +488,7 @@ class PartitionILP {
 		coded_tot = 0; //summation of rows expected followed by coded
 		expected_tot = 0;
 		int expectedUnq = numVertices; //V
-		cout << expectedUnq << " " << nUniqCons << " ";
+		cout << "Model size rows " << expectedUnq << " " << nUniqCons << " ";
 		coded_tot += nUniqCons;
 		expected_tot += expectedUnq;
 		
@@ -520,9 +523,10 @@ class PartitionILP {
 	}
 	//print stats after iteration
 	void printStats(double time, int iteration) {
-		cout << time << " ";
+		cout << "Solution stats " <<  time << " ";
 		cout << numParts << " ";
-		cout << iteration << endl;
+		cout << iteration <<  " ";
+		cout << cplexPtr->getObjValue() << endl;
 	}
 	bool solve() {
 		int countMaps = 0;
@@ -744,23 +748,15 @@ class PartitionILP {
 
 
 
-		cout << "Write counts|Out edges counts ";
+		cout << "Write counts Out Edges Reads In Edges per partition ";
 		for(int i = 0; i < numParts; i++) {
-			//write trans count
-			cout << writeCount[i] << "|";
-			cout << outEdgesCount[i] << ", ";
+			cout << writeCount[i] << " ";
+			cout << outEdgesCount[i] << " ";
 			assert(writeCount[i] <= TSize);
-		}
-		cout << endl;
-
-		//print out edges count
-		cout << "Reads counts|In edges count ";
-		for(int i = 0; i < numParts; i++) {
-			cout << readCount[i] << "|";
-			cout << inEdgesCount[i] << ", ";
+			cout << readCount[i] << " ";
+			cout << inEdgesCount[i] << " ";
 			assert(readCount[i] <= TSize);
 		}
-
 		cout << endl;
 	}
 };
