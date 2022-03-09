@@ -205,7 +205,6 @@ class PartitionILP {
 			for(int l = 1; l < numParts; l++) {
 				//sum over all xikl variables where p < l
 				for(int p = 0; p < l; p++) {
-					//objective.setLinearCoef(XiklMap[i][{p, l}], 1);
 					RiklMap[i][{p, l}] = true;//set pl to 1 and count it later while accounting objective for reads
 				}
 			}
@@ -746,6 +745,7 @@ class PartitionILP {
 		cout << "Store transactions = " << storeTrans << endl;
 		
 
+		cout << "Total transactions = " << storeTrans + loadTrans << " Total cost " << loadWeight * (storeTrans + loadTrans) << endl;
 
 
 		cout << "Write counts Out Edges Reads In Edges per partition ";
@@ -787,7 +787,11 @@ int main (int argc, char **argv)
 
 	auto start = chrono::high_resolution_clock::now();
 	int numParts = ceil(float(gp.getNumNodes()) / float(size)); //set initial partition size to total vertices divided by partition size
+	ofstream log_stream; //for log file
+	log_stream.open("cplex.log", std::fstream::out);
+
 	for(int i = 1; i <= iterations; i++) {
+		log_stream << "Trying with iteration no. " << i << endl;
 		PartitionILP *gp1 = new PartitionILP(gp, size, trans_limit, numParts, loadWt);
 		gp1->addColVars();//set objective function; define all vars
 		gp1->addUniqueCons(); //add uniqness constraints
@@ -796,20 +800,22 @@ int main (int argc, char **argv)
 
 		gp1->addInterPartCons(); //add constraints w.r.t inter partition communication
 		gp1->addLoadStoreReuse(); //add load reuse constraints
-		gp1->addTransCons();
-		gp1->printVarCons();
+		gp1->addTransCons(); //add transaction constraints
+		gp1->printVarCons(); // print model variables
 		if(gp1->solve() == true) {
 			gp1->ValidateSoln();
 			auto stop = chrono::high_resolution_clock::now();
 			auto duration = chrono::duration_cast<chrono::milliseconds>(stop - start).count();
 			double secs = duration/1000.0;
-			gp1->printStats(secs, i);
+			gp1->printStats(secs, i);//print solution stats
 			cout << "Solution found in iteration number " << i << " with partitions " << numParts << endl;
 			break;
 		}
 		numParts++;
 		delete gp1;
 	}
+
+	log_stream.close();//close log stream
 	
 	return 0;
 }
