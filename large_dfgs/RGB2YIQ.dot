@@ -23,9 +23,9 @@ digraph RGB2YIQ {
   21 [label="ashr"];
   22 [label="ashr"];
   23 [label="ashr"];
-  24 [label="store"];
-  25 [label="store"];
-  26 [label="store"];
+  24 [label="store;1"];
+  25 [label="store;1"];
+  26 [label="store;1"];
 
 
   0->2 [label="1:1"];

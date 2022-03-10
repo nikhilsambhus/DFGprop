@@ -1,10 +1,13 @@
 digraph  {
-   0 [label="load"];
-   1 [label="load"];
-   2 [label="fadd"];
-   3 [label="store"];
+   0 [label="load;0"];
+   1 [label="load;1"];
+   2 [label="load;2"];
+   3 [label="load;3"];
+   4 [label="load;4"];
+   5 [label="fadd"];
+   6 [label="store;5"];
 
-   0->2 [label=":1"];
-   1->2 [label=":1"];
-   2->3 [label=":1"];
+   0->5 [label=":1"];
+   1->6 [label=":1"];
+   2->6 [label=":1"];
 };

@@ -26,9 +26,9 @@ digraph {
   24 [label="add"];
   25 [label="add"];
   26 [label="add"];
-  27 [label="store"];
-  28 [label="store"];
-  29 [label="store"];
+  27 [label="store;2"];
+  28 [label="store;2"];
+  29 [label="store;2"];
 
   0->6 [label="1:1"];
   1->6 [label="1:1"];

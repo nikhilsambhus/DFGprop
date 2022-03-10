@@ -63,15 +63,15 @@ digraph MatMul_3x3 {
   60 [label="add"];
   61 [label="add"];
   62 [label="add"];
-  63 [label="store"];
-  64 [label="store"];
-  65 [label="store"];
-  66 [label="store"];
-  67 [label="store"];
-  68 [label="store"];
-  69 [label="store"];
-  70 [label="store"];
-  71 [label="store"];
+  63 [label="store;5"];
+  64 [label="store;5"];
+  65 [label="store;5"];
+  66 [label="store;5"];
+  67 [label="store;6"];
+  68 [label="store;6"];
+  69 [label="store;6"];
+  70 [label="store;6"];
+  71 [label="store;7"];
 
 
   0->18 [label="1:1"];

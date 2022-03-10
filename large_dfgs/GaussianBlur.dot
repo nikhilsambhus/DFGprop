@@ -74,7 +74,7 @@ digraph GaussianBlur {
   71 [label="add"];
   72 [label="add"];
   73 [label="add"];
-  74 [label="store"];
+  74 [label="store;7"];
 
 
   0->25 [label="1:1"];

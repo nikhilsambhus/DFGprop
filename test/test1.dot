@@ -1,8 +1,9 @@
 digraph {
   0 [label = "load;0"];
-  1 [label = "load;0"];
+  1 [label = "load;1"];
+  2 [label = "add"];
 
-  0->1 [label="1:1"];
+  0->2 [label="1:1"];
 }
 
 

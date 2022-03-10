@@ -47,7 +47,7 @@ CPLEXINCDIR   = $(CPLEXDIR)/include
 INCGRAPH=../include/
 GR_LIB=/home/sambhusn/llvm-project/llvm/lib/Transforms/LLVMAssngs/cgramap/Graph/lib/libgraph.a 
 
-CCFLAGS = --std=c++11 $(CCOPT) -I$(CPLEXINCDIR) -I$(CONCERTINCDIR) -I$(INCGRAPH) 
+CCFLAGS = -g --std=c++11 $(CCOPT) -I$(CPLEXINCDIR) -I$(CONCERTINCDIR) -I$(INCGRAPH) 
 
 
 partition: partition.o
