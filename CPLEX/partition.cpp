@@ -63,8 +63,8 @@ class PartitionILP {
 	public:
 	PartitionILP(DAG gp, int rsize, int tsize, int nPts, int loadWt) {
 		modelPtr = new IloModel(env);
-	 //transaction limit
-	 cplexPtr = new IloCplex(env);
+		//transaction limit
+		cplexPtr = new IloCplex(env);
 		varPtr = new IloNumVarArray(env);
 		graph = gp;
 		RSize = rsize; //partition size
@@ -710,6 +710,12 @@ class PartitionILP {
 
 		//count distinct cluster of loads
 		int loadTrans = 0;
+		map<int, int> storesCount; //count of store transactions per partition
+		map<int, int> loadsCount; //count of load transactions per partition
+		for(int i = 0; i < numParts; i++) {
+			storesCount[i] = 0;
+			loadsCount[i] = 0;
+		}
 		for(auto elem : loadGroups) {
 			//count consider each group nodes
 			vector<int> loadsV = elem.second;
@@ -719,7 +725,10 @@ class PartitionILP {
 				assert(p != -1);
 				partMapd[p] = true;
 			}
-			
+			for(auto elem : partMapd) {
+				int pd = elem.first; //partition id
+				loadsCount[pd]++; //there is one transaction of load going from this partition
+			}
 			loadTrans = loadTrans + partMapd.size();
 			//size of partMapd tells how many different partitions loads are present..or how many load transactions need to be issued
 		}
@@ -737,7 +746,11 @@ class PartitionILP {
 				assert(p != -1);
 				partMapd[p] = true;
 			}
-			
+			for(auto elem : partMapd) {
+				int pd = elem.first; //partition id
+				storesCount[pd]++; //there is one transaction of store going from this partition
+			}
+
 			storeTrans = storeTrans + partMapd.size();
 			//size of partMapd tells how many different partitions loads are present..or how many load transactions need to be issued
 		}
@@ -748,14 +761,15 @@ class PartitionILP {
 		cout << "Total transactions = " << storeTrans + loadTrans << " Total cost " << loadWeight * (storeTrans + loadTrans) << endl;
 
 
+		
 		cout << "Write counts Out Edges Reads In Edges per partition ";
 		for(int i = 0; i < numParts; i++) {
 			cout << writeCount[i] << " ";
 			cout << outEdgesCount[i] << " ";
-			assert(writeCount[i] <= TSize);
+			assert(writeCount[i] + storesCount[i] <= TSize); //assert write + store less than T
 			cout << readCount[i] << " ";
 			cout << inEdgesCount[i] << " ";
-			assert(readCount[i] <= TSize);
+			assert(readCount[i] + loadsCount[i] <= TSize); //assert read + load less than T
 		}
 		cout << endl;
 	}
@@ -792,6 +806,8 @@ int main (int argc, char **argv)
 
 	for(int i = 1; i <= iterations; i++) {
 		log_stream << "Trying with iteration no. " << i << endl;
+		///todelete: increment numparts to some value to test for specific experiments
+		//numParts += 2;
 		PartitionILP *gp1 = new PartitionILP(gp, size, trans_limit, numParts, loadWt);
 		gp1->addColVars();//set objective function; define all vars
 		gp1->addUniqueCons(); //add uniqness constraints
