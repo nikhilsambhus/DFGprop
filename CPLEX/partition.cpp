@@ -117,7 +117,7 @@ class PartitionILP {
 				}
 
 				this->numLoads++;//inc number of loads
-			} else if(op.find("store") != string::npos || op.find("STR") != string::npos) { ///two possible vals for describing load nodes
+			} else if(op.find("store") != string::npos || op.find("STR") != string::npos) { ///two possible vals for describing str nodes
 				//find group id which is placed after store;"
 				int pos  = op.find(";");
 				int group_id = stoi(op.substr(pos + 1, string::npos)); //from : + 1 till end of string
@@ -173,7 +173,33 @@ class PartitionILP {
 			lpsMap[elem.first] = lpV;
 		}
 		this->nLp += count; //assign count to store group variables
+
+		//summation in the objective function
+		//temporary addition
+		/*this->klMapVec.clear();
+		count = 0;
+		//add columns for each edge (parts * parts) for communication objective function
+		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
+			map<pair<int, int>, IloBoolVar> klMap;
+			for(int k = 0; k < numParts; k++) {
+				for(int l = k; l < numParts; l++) {
+					klMap[{k ,l}] = IloBoolVar(env);
+					varPtr->add(klMap[{k, l}]);
+					if(k != l) {
+						objective.setLinearCoef(klMap[{k, l}], 1);
+					}
+					else 
+						objective.setLinearCoef(klMap[{k, l}], 0);
+				}
+				count++;
+			}
+			this->klMapVec.push_back(klMap);
+		}
 		
+		
+		cout << "Xij^kl variable added count = " << count << endl;
+		*/
+
 		count = 0;
 		//define kl variables for each i for inter communication..define for both y and x variables
 		for(int i = 0; i < numVertices; i++) {
@@ -226,11 +252,43 @@ class PartitionILP {
 				}
 			}
 		}
-		
+
 		modelPtr->add(objective);
 
 	}
-	
+
+	void addEdgesCons() {
+		int i = 0;
+
+		//Constraints modelling edges as communication which contain both intrapartition and same partition edges
+		int nCons = 0;
+		for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
+			uint32_t src_i = it->getSrcNodeID();
+			uint32_t dest_j = it->getDestNodeID();
+			//first constraint sum (p < l) Xi_j^p_l = Xj_l
+			for(int l = 0; l < numParts; l++) {
+				IloRange range = IloRange(env, 0, 0);
+				for(int p = 0; p <= l; p++) {
+					range.setLinearCoef(klMapVec[i][{p, l}], 1);
+				}
+				range.setLinearCoef(ijMap[{dest_j, l}], -1);
+				modelPtr->add(range);
+				nCons++;
+			}
+			//second constraint sum (p > k) Xi_j^k_p = Xi_k
+			for(int k = 0; k < numParts; k++) {
+				IloRange range = IloRange(env, 0, 0);
+				for(int p = k; p < numParts; p++) {
+					range.setLinearCoef(klMapVec[i][{k, p}], 1);
+				}
+				range.setLinearCoef(ijMap[{src_i, k}], -1);
+				modelPtr->add(range);
+				nCons++;
+			}
+			i++;
+		}
+
+	}
 	//add uniqueness constraint of mapping n vertices to p partitions
 	void addUniqueCons() {
 		int nCons = 0;
@@ -482,7 +540,7 @@ class PartitionILP {
 		coded_tot += nInPa;
 		expected_tot += expectedInPa;
 
-		cout << expected_tot << " " << coded_tot << endl;
+		cout << expected_tot << " 0 " << coded_tot << endl;
 		
 		coded_tot = 0; //summation of rows expected followed by coded
 		expected_tot = 0;
@@ -515,7 +573,7 @@ class PartitionILP {
 		cout << expectedTrans << " " << nTransCons << " ";
 		expected_tot += expectedTrans;
 		coded_tot += nTransCons;
-		cout << expected_tot << " " << coded_tot << " ";
+		cout << expected_tot << " 0 " << coded_tot << " ";
 
 		cout << endl;
 
@@ -526,11 +584,24 @@ class PartitionILP {
 		cout << numParts << " ";
 		cout << iteration <<  " ";
 		cout << cplexPtr->getObjValue() << endl;
+		
+		//Transaction limit stats
+		cout << "Transaction limits ";
+		cout << iteration << " ";
+		cout << numParts << " ";
+		cout << cplexPtr->getObjValue() << " ";
+		cout << cplexPtr->getNrows() << " ";
+		cout << cplexPtr->getNcols() << " ";
+		cout << time << endl;
 	}
 	bool solve() {
 		int countMaps = 0;
 		try {
 			cplexPtr->extract(*modelPtr);
+			cplexPtr->setParam(IloCplex::Param::Emphasis::MIP, 1);//set emphasis to feasibility
+			cplexPtr->setParam(IloCplex::Param::MIP::Tolerances::MIPGap, 0.05);//mip gap to some percentage
+			//cplexPtr->tuneParam(); //tune parameter
+			//cplexPtr->setParam(IloCplex::Param::MIP::Strategy::Probe, 3); //set probing level to 3
 			cplexPtr->exportModel("test.lp");
 			if(!cplexPtr->solve()) {
 				cout << "Failed to optimize" << endl;
@@ -808,12 +879,14 @@ int main (int argc, char **argv)
 		log_stream << "Trying with iteration no. " << i << endl;
 		///todelete: increment numparts to some value to test for specific experiments
 		//numParts += 2;
+		//to delete
 		PartitionILP *gp1 = new PartitionILP(gp, size, trans_limit, numParts, loadWt);
 		gp1->addColVars();//set objective function; define all vars
 		gp1->addUniqueCons(); //add uniqness constraints
 		gp1->addSizeCons(); //add size constraints
 		gp1->addEdgePrec(); //add edge precedence constraints
 
+	//	gp1->addEdgesCons(); //constraints for edges
 		gp1->addInterPartCons(); //add constraints w.r.t inter partition communication
 		gp1->addLoadStoreReuse(); //add load reuse constraints
 		gp1->addTransCons(); //add transaction constraints
