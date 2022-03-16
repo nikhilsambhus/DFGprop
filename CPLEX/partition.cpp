@@ -12,6 +12,7 @@
 #include <cstdint>
 #include "Edge.h"
 #include "Graph.h"
+#include <sys/stat.h>
 #include <vector>
 #include <map>
 ILOSTLBEGIN
@@ -598,8 +599,8 @@ class PartitionILP {
 		int countMaps = 0;
 		try {
 			cplexPtr->extract(*modelPtr);
-			cplexPtr->setParam(IloCplex::Param::Emphasis::MIP, 1);//set emphasis to feasibility
-			cplexPtr->setParam(IloCplex::Param::MIP::Tolerances::MIPGap, 0.05);//mip gap to some percentage
+			//cplexPtr->setParam(IloCplex::Param::Emphasis::MIP, 1);//set emphasis to feasibility
+			//cplexPtr->setParam(IloCplex::Param::MIP::Tolerances::MIPGap, 0.20);//mip gap to some percentage
 			//cplexPtr->tuneParam(); //tune parameter
 			//cplexPtr->setParam(IloCplex::Param::MIP::Strategy::Probe, 3); //set probing level to 3
 			cplexPtr->exportModel("test.lp");
@@ -844,6 +845,33 @@ class PartitionILP {
 		}
 		cout << endl;
 	}
+
+	//return vertices mapped to this partition
+	vector<int> getVersPart(int pid) {
+		vector<int> nds;
+		//iterate through all vertices and add the on which is mapped to pid
+		for(int i = 0; i < numVertices; i++) {
+			double val = cplexPtr->getValue(ijMap[{i, pid}]);
+			if(compareEqual(val, 1) == true) {
+				nds.push_back(i);
+			}
+		}
+		return nds;
+	}
+
+	void saveParts() {
+		string opPath; //path of folder for storing output dfgs
+		string fullName = graph.getName();
+		opPath = fullName.substr(fullName.rfind("/") + 1); //get last part of the name
+		opPath.erase(dotName.size() - 4, 4);				//erase the last ".dot"
+		opPath = "outputParts/" + opPath;  //full name of directory
+
+		//add param of size, trans limit, ldweight to directory name
+		opPath = opPath + "_" + to_string(RSize) +  "_" + to_string(TSize) + "_" + to_string(loadWeight); 
+		cout << "Name of graph " << dotName << endl;
+		mkdir(dotName.c_str(), 0777);//make directory inside output parts
+
+	}
 };
 
 
@@ -859,6 +887,7 @@ int main (int argc, char **argv)
 	char *inpName = argv[1];
 	try {
 		gp = DAG(inpName);
+		gp.setName(inpName);
 	} catch(string ex) {
 		cout << ex << endl;
 	}
@@ -892,6 +921,7 @@ int main (int argc, char **argv)
 		gp1->addTransCons(); //add transaction constraints
 		gp1->printVarCons(); // print model variables
 		if(gp1->solve() == true) {
+			gp1->saveParts();
 			gp1->ValidateSoln();
 			auto stop = chrono::high_resolution_clock::now();
 			auto duration = chrono::duration_cast<chrono::milliseconds>(stop - start).count();
