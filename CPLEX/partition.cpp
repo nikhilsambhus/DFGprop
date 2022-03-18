@@ -12,9 +12,11 @@
 #include <cstdint>
 #include "Edge.h"
 #include "Graph.h"
+#include "GraphUtils.h"
 #include <sys/stat.h>
 #include <vector>
 #include <map>
+#include <algorithm>
 ILOSTLBEGIN
 using namespace std;
 class PartitionILP {
@@ -863,13 +865,63 @@ class PartitionILP {
 		string opPath; //path of folder for storing output dfgs
 		string fullName = graph.getName();
 		opPath = fullName.substr(fullName.rfind("/") + 1); //get last part of the name
-		opPath.erase(dotName.size() - 4, 4);				//erase the last ".dot"
+		opPath.erase(opPath.size() - 4, 4);		//erase the last ".dot"
 		opPath = "outputParts/" + opPath;  //full name of directory
 
 		//add param of size, trans limit, ldweight to directory name
-		opPath = opPath + "_" + to_string(RSize) +  "_" + to_string(TSize) + "_" + to_string(loadWeight); 
-		cout << "Name of graph " << dotName << endl;
-		mkdir(dotName.c_str(), 0777);//make directory inside output parts
+		opPath = opPath + "_" + to_string(RSize) +  "_" + to_string(TSize) + "_" + to_string(loadWeight) + "/"; 
+		cout << "Name of graph " << opPath << endl;
+		mkdir(opPath.c_str(), 0777);//make directory inside output parts
+
+		//generate one graph for one partition
+		for(int p = 0; p < numParts; p++) {
+			string dotfName = opPath + to_string(p) + ".dot"; //name for dot file is nparts.dot
+			//get vertices mapped to this partition
+			vector<int> partVerV = getVersPart(p);
+			DAG outDFG; //output DFG
+			map<int, int> NodeMap; //map of vertex ids to normalized ones
+			//assing normalized ids to vertices of this partition and these vertices to the graph
+			int norm = 0;
+			for(int vd : partVerV) {
+				NodeMap[vd] = norm;
+				const Node *nd = graph.findNode(vd);
+				outDFG.addNode(norm, nd->getLabel());
+				norm++;
+			}
+			
+			int edgeId = 0;
+			//go through each edge in input graph to check source and dest belongings
+			for(list<Edge>::iterator it = graph.edgeBegin(); it != graph.edgeEnd(); it++) {
+				uint32_t src = it->getSrcNodeID();
+				uint32_t dest = it->getDestNodeID();
+				bool srcFound = find(partVerV.begin(), partVerV.end(), src) != partVerV.end();
+				bool destFound = find(partVerV.begin(), partVerV.end(), dest) != partVerV.end();
+				//if both belong to this partition then simply add the edge based on normalized ids
+				if(srcFound && destFound) {
+					outDFG.addEdge(edgeId, NodeMap[src], NodeMap[dest], it->getLabel());
+					edgeId++;
+				}
+				//if source in this partition by destitionation in next partition, add terminal sc_pad_write node
+				//add edge from this source to that scratch pad write
+				else if(srcFound && getMapPart(dest) > p) {
+					outDFG.addNode(norm, "sc_pad_write");
+					outDFG.addEdge(edgeId, NodeMap[src], norm, it->getLabel());
+					edgeId++;
+					norm++;
+				}
+				//if dest in this partition and source in previous partition, add sc_pad_read node
+				//add edge from sc_pad_read node to this dest
+				else if(destFound && getMapPart(src) < p) {
+					outDFG.addNode(norm, "sc_pad_read");
+					outDFG.addEdge(edgeId, norm, NodeMap[dest], it->getLabel());
+					edgeId++;
+					norm++;
+				}
+			}
+			
+			//write output to dot file
+			toDOT(dotfName, outDFG);
+		}
 
 	}
 };
